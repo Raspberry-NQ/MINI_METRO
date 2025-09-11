@@ -60,7 +60,15 @@ class MetroLine:
 
     def addTrain(self, trainInventory):  # 返回是否成功,和加入火车的编号
         isSucc = False
-        if trainInventory.trainNm
+        if trainInventory.trainAble > 0:
+            #减少一个火车和车厢
+
+            #注册车头车厢到线路
+
+            #记录车辆起始点和方向,注册速度
+
+            #注册上客和过站策略
+
             return isSucc
 
 
