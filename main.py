@@ -3,6 +3,8 @@
 # Press Shift+F10 to execute it or replace it with your code.
 # Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
 
+from queue import Queue
+
 
 def print_hi(name):
     # Use a breakpoint in the code line below to debug your script.
@@ -11,6 +13,47 @@ def print_hi(name):
 
 def goOneTick():
     print("update")
+
+
+trainStatusList = {1: "passengerBoarding",  # 乘客上车
+                   2: "passengerAlighting",  # 乘客下车
+                   3: "idle",  # 空闲中
+                   4: "running",  # 前往下一站中
+                   5: "shunting"}  # 调车冷却中
+
+
+class train:
+    def __init__(self, number):
+        self.number = number
+        self.line = 0       # 0代表未放置
+        self.status = 3
+        self.carriageList = []
+        self.nextStatus=-1  #空闲状态如果不做操作,应该是无限保持.因此
+
+    def moveTrain(self, lineNo):
+        self.line = lineNo
+    def updateStatus(self):
+
+    def printTrain(self):
+        print("车头编号:", self.number)
+        print("车辆状态:", trainStatusList[self.status])
+        if self.status in (4, 1, 2):
+            print("所在线路:", self.line)
+            print("挂载车厢:", self.carriageList)
+        if self.status == 5:
+            print("调车冷却中!")
+
+
+class carriage:
+    def __init__(self):
+        self.line = 0
+        self.capacity = 6  # 车厢容量,默认为6
+        self.currNum = 0  # 当前人数
+
+    def moveCarriage(self, lineNo):  ###<<----------------
+        # 注意此操作后,要到下一个站点才能正式操作
+        # 先落客,然后判断去掉后是否为空车头,然后再修改
+        self.line = lineNo
 
 
 class Station:
@@ -33,7 +76,6 @@ class trainInventory:  # 记录所有火车和车厢信息.以及注意:train代
         self.trainNm = 0
         self.carriageList = []
         self.carriageNm = 0
-        self.capacity = 6  # 车厢容量,默认为6
 
         self.trainAble = 0
         self.carriageAble = 0
@@ -51,7 +93,7 @@ class MetroLine:
         self.stations = stList
         self.trainNm = 0
 
-    def distance(self):
+    def distance(self):  # 单位为刻
         dis = 0
         for i in range(0, len(self.stations) - 1):
             dis = dis + calculateDistance(self.stations[i].x, self.stations[i].y, self.stations[i + 1].x,
@@ -61,13 +103,13 @@ class MetroLine:
     def addTrain(self, trainInventory):  # 返回是否成功,和加入火车的编号
         isSucc = False
         if trainInventory.trainAble > 0:
-            #减少一个火车和车厢
+            # 减少一个火车和车厢
 
-            #注册车头车厢到线路
+            # 注册车头车厢到线路
 
-            #记录车辆起始点和方向,注册速度
+            # 记录车辆起始点和方向,注册速度
 
-            #注册上客和过站策略
+            # 注册上客和过站策略
 
             return isSucc
 
@@ -107,5 +149,7 @@ if __name__ == '__main__':
     world.stations.append(Station(3, 125, 120))
     world.showInformation()
     print(calculateDistance(1, 2, 3, 4))
+    trainTest = train(1)
+    trainTest.printTrain()
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
