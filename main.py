@@ -3,10 +3,16 @@
 # Press Shift+F10 to execute it or replace it with your code.
 # Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
 
-from queue import Queue
+
+#
 ###------------------------------------------>><<-----------------------------------------------------
 ##引入库
 import sys
+import time
+
+import heapq
+from queue import Queue
+
 
 ###------------------------------------------>><<-----------------------------------------------------
 # 原子基础类
@@ -156,12 +162,53 @@ class GameWorld:
         self.trains = []  # Train实例列表
         self.metroLine = []
 
-    def showInformation(self):
+    def printInformation(self):
         count = 0
         for i in self.stations:
             print("station", count)
             i.printStation()
             count = count + 1
+
+
+# AI MAKE @ HERE
+class TimerScheduler:
+    def __init__(self):
+        self.events = []  # 最小堆: (trigger_time, train_id, action)
+        self.current_time = 0  # 游戏时间(秒)
+
+    def register(self, delay, train_id, action):
+        """注册定时事件
+        delay: 延迟时间(秒)
+        train_id: 列车标识
+        action: 状态变更函数
+        """
+        trigger_time = self.current_time + delay
+        heapq.heappush(self.events, (trigger_time, train_id, action))
+
+    def update(self, dt):
+        """更新所有定时事件
+        dt: 距离上次更新的时间增量(秒)
+        """
+        self.current_time += dt
+        while self.events and self.events[0][0] <= self.current_time:
+            _, train_id, action = heapq.heappop(self.events)
+            action()  # 执行状态变更
+
+
+# 列车状态机示例
+class Train:
+    def __init__(self, id):
+        self.id = id
+        self.state = "MOVING"
+
+    def enter_station(self):
+        print(f"列车{self.id}进站")
+        self.state = "DOCKED"
+        scheduler.register(3, self.id, self.depart)  # 3秒后触发离站
+
+    def depart(self):
+        print(f"列车{self.id}离站")
+        self.state = "MOVING"
 
 
 ###------------------------------------------>><<-----------------------------------------------------
@@ -193,7 +240,7 @@ if __name__ == '__main__':
     world.stations.append(Station(1, 0, 0))
     world.stations.append(Station(2, 232, 76))
     world.stations.append(Station(3, 125, 120))
-    world.showInformation()
+
     print(calculateDistance(1, 2, 3, 4))
     trainTest = train(1)
     trainTest.printTrain()
