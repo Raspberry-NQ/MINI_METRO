@@ -10,13 +10,14 @@ import sys
 
 ###------------------------------------------>><<-----------------------------------------------------
 # 原子基础类
-trainStatusList = {1: "passengerBoarding",  # 乘客上车
-                   2: "passengerAlighting",  # 乘客下车
+trainStatusList = {1: "passengerAlighting",  # 乘客落车
+                   2: "passengerBoarding",  # 乘客上车
                    3: "idle",  # 空闲中
                    4: "running",  # 前往下一站中
                    5: "shunting"}  # 调车冷却中
 
 
+# 注意列车状态是先下后上
 class train:
     def __init__(self, number):
         self.number = number
@@ -35,6 +36,17 @@ class train:
         self.nextStatusTime -= 1
         if self.nextStatusTime == 0:  # 进入下一个状态
             self.status = self.nextStatus
+
+    def trainArrive(self, station):
+        self.status = 1
+        self.nextStatusTime = countTrainBoardingTime(station)
+        self.stationNow = station
+        self.nextStatus = 2  # 下一状态改为落客
+
+    def trainLeaveStation(self):
+        self.status = 4
+        self.nextStatus = 1
+        self.nextStatusTime = calculateDistance()
 
     def printTrain(self):
         print("车头编号:", self.number)
@@ -114,7 +126,9 @@ class MetroLine:
     def distance(self):  # 单位为刻
         dis = 0
         for i in range(0, len(self.stations) - 1):
-            dis = dis + calculateDistance(self.stations[i].x, self.stations[i].y, self.stations[i + 1].x,
+            dis = dis + calculateDistance(self.stations[i].x,
+                                          self.stations[i].y,
+                                          self.stations[i + 1].x,
                                           self.stations[i + 1].y)
         return dis
 
@@ -154,6 +168,11 @@ class GameWorld:
 # 外部独立函数
 def calculateDistance(x1, y1, x2, y2):
     d = round(((x1 - x2) ** 2 + (y1 - y2) ** 2) ** (1 / 2))
+    return d
+
+
+def claculateDistance(sta, stb):
+    d = calculateDistance(sta.x, sta.y, stb.x, stb.y)
     return d
 
 
