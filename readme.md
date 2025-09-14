@@ -36,3 +36,5 @@ train,status), 里面判断冷却时间等等
 因此一列车的完整周期是:
 *boarding->running->alighting->(boarding->running->alighting)... ->(destination)alighting-> **change direction** ->boarding->...*
 如果有调车,则是*(boarding->)running->**get shunting command**->alighting->shunting->boarding->...like upon*
+
+所以换向判断应该写在boarding里面,因为调车和终点站都要操作行驶方向,这俩也都是从boarding开始
