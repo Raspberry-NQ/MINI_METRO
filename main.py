@@ -37,6 +37,9 @@ class train:
         self.nextStatusTime = -1  # 空闲状态如果不做操作,应该是无限保持.因此为-1
         self.nextStatus = 3
 
+    def addCarriage(self, carriage):
+        self.carriageList.append(carriage)
+
     '''
     以下五个函数写明了操作火车进入新的状态,并且返回在新的状态持续的时间,注意不是从上个状态转移到新状态的时间
     也就是说,在调用这五个函数时,上个状态应当以及结束了
@@ -146,10 +149,25 @@ class TrainInventory:  # 记录所有火车和车厢信息.以及注意:train代
         newCarr = carriage(self.carriageNm)
         self.carriageAbleList.append(newCarr)
 
-    def employTrain(self, train, line, station):  # 移动列车到线路,进入状态1
+    def getFreeTrain(self):
+        if len(self.trainAbleList) == 0:
+            sys.exit("火车余额不足!(在addTrainToLine)")
+        newtrain = self.trainAbleList[0]
+        self.trainAbleList.remove(newtrain)
+        return newtrain
+
+    def getFreeCarriage(self):
+        if len(self.carriageAbleList) == 0:
+            sys.exit("车厢余额不足!(在addTrainToLine)")
+        newcarriage = self.carriageAbleList[0]
+        self.carriageAbleList.remove(newcarriage)
+        return newcarriage
+
+    def employTrain(self, line, station):  # 移动列车到线路,进入状态1
         if line == 0 or line == train.line:
             print("FALSE LINE")
             sys.exit("FALSE LINE,in \"employTrain()\"")
+
         train.line = line
         train.status = 1  # 进入上客状态
         train.stationNow = station
@@ -159,29 +177,33 @@ class TrainInventory:  # 记录所有火车和车厢信息.以及注意:train代
 class MetroLine:
     def __init__(self, number, stList):
         self.number = number
-        self.stations = stList
+        self.stationList = stList
+
         self.trainNm = 0
+        self.trainDirection = {}  # True为正向,False为反向
 
     def distance(self):  # 单位为刻
         dis = 0
-        for i in range(0, len(self.stations) - 1):
-            dis = dis + countTrainRunningTime(self.stations[i], self.stations[i + 1])
+        for i in range(0, len(self.stationList) - 1):
+            dis = dis + countTrainRunningTime(self.stationList[i], self.stationList[i + 1])
         return dis
 
-    def addTrainToLine(self, trainInventory):  # 返回是否成功,和加入火车的编号
-        isSucc = False
-        if trainInventory.trainAble > 0:
-            # 减少一个火车和车厢
+    def addTrainToLine(self, trainInventory, direction):  # 返回是否成功,和加入火车的编号
 
-            # 注册车头车厢到线路
+        nCarriage = trainInventory.getFreeCarriage()
+        nTrain = trainInventory.getFreeTrain()
+        nTrain.addCarriage(nCarriage)
+        self.trainDirection[nTrain] = direction
+        self.trainNm+=1
 
-            # 记录车辆起始点和方向,注册速度
+    def removeTrainFromLine(self, train): # 只有在调车时才会用到
+        if self.trainDirection[train] != None:
+            self.trainNm-=1
+            self.trainDirection.pop(train)
 
-            # 注册上客和过站策略
 
-            return isSucc
-        else:
-            sys.exit("火车余额不足!(在addTrainToLine)")
+    def printLine(self):
+        print("正向起点", len(self.stationList), "正向终点")
 
 
 ###------------------------------------------>><<-----------------------------------------------------
@@ -211,7 +233,7 @@ class TimerScheduler:
             _, trainout, nextStatus = heapq.heappop(self.events)
             updateTrain.append(trainout)
             updateStatus.append(nextStatus)
-        print("需要更新的火车有",len(updateTrain),"个")
+        print("需要更新的火车有", len(updateTrain), "个")
         return updateTrain, updateStatus
 
 
