@@ -71,7 +71,7 @@ class train:
     def setRunning(self, nextStation):
         if self.status != 2:
             sys.exit("出站前状态不对,在setrunning")
-        self.status = 3
+        self.status = 4
         # 不修改当前station,直到落客才修改
         self.nextStatusTime = countTrainRunningTime(self.stationNow, nextStation)
         self.nextStatus = 1  # 下一个状态一般是3
@@ -134,7 +134,7 @@ class TrainInventory:  # 记录所有火车和车厢信息.以及注意:train代
         self.trainAbleList = []
         self.carriageAbleList = []
 
-        trainTimer = TimerScheduler()
+        self.trainTimer = TimerScheduler()
 
     def addTrain(self):
         self.trainNm += 1
@@ -165,7 +165,7 @@ class MetroLine:
     def distance(self):  # 单位为刻
         dis = 0
         for i in range(0, len(self.stations) - 1):
-            dis = dis + calculateDistance(self.stations[i], self.stations[i + 1])
+            dis = dis + countTrainRunningTime(self.stations[i], self.stations[i + 1])
         return dis
 
     def addTrainToLine(self, trainInventory):  # 返回是否成功,和加入火车的编号
@@ -234,7 +234,7 @@ class GameWorld:
 # 外部独立函数
 
 
-def calculateDistance(sta, stb):
+def countTrainRunningTime(sta, stb):
     x1 = sta.x
     x2 = stb.x
     y1 = sta.y
@@ -252,17 +252,13 @@ def countTrainBoardingTime(station):
 def countTrainAlightingTime(train):
     ticks = 5
     l = len(train.carriageList)
-    for i in range(1, l):
+    for i in range(0, l):
         ticks += train.carriageList[i].currentNum * 5
     return ticks
 
 
 def countTrainIdleTime():
     return 9999
-
-
-def countTrainRunningTime(sta, stb):
-    return calculateDistance(sta, stb)
 
 
 def countTrainShuntingime(lineA, lineB):
@@ -283,7 +279,7 @@ if __name__ == '__main__':
     world.stations.append(Station(2, 232, 76))
     world.stations.append(Station(3, 125, 120))
 
-    print(calculateDistance(world.stations[1], world.stations[0]))
+    print(countTrainRunningTime(world.stations[1], world.stations[0]))
     trainTest = train(1)
     trainTest.printTrain()
 
