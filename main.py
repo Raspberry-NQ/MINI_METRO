@@ -21,6 +21,7 @@ trainStatusList = {1: "passengerAlighting",  # 乘客落车
                    4: "running",  # 前往下一站中
                    5: "shunting"}  # 调车冷却中
 
+
 #
 # 注意列车状态是先下后上
 class train:
