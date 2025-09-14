@@ -31,3 +31,8 @@ train,status), 里面判断冷却时间等等
 另外timeschedule的更新可以放到world的update函数里,每个tick运行一次
 
 应该是,每次在inventory调用改变列车状态的函数时,注册一个新的倒计时
+
+还有,列车在终点站自动掉头,应当是先落客完,然后掉头,再上客.
+因此一列车的完整周期是:
+*boarding->running->alighting->(boarding->running->alighting)... ->(destination)alighting-> **change direction** ->boarding->...*
+如果有调车,则是*(boarding->)running->**get shunting command**->alighting->shunting->boarding->...like upon*
