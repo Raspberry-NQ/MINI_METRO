@@ -191,23 +191,28 @@ class TimerScheduler:
         self.events = []  # 最小堆: (trigger_time, train_id, action)
         self.current_time = 0  # 游戏时间(秒)
 
-    def register(self, delay, train_id, action):
+    def register(self, delay, train, nextStatus):
         """注册定时事件
         delay: 延迟时间(秒)
         train_id: 列车标识
         action: 状态变更函数
         """
         trigger_time = self.current_time + delay
-        heapq.heappush(self.events, (trigger_time, train_id, action))
+        heapq.heappush(self.events, (trigger_time, train, nextStatus))
 
     def update(self, dt):
         """更新所有定时事件
         dt: 距离上次更新的时间增量(秒)
         """
+        updateTrain = []
+        updateStatus = []
         self.current_time += dt
         while self.events and self.events[0][0] <= self.current_time:
-            _, train_id, action = heapq.heappop(self.events)
-            action()  # 执行状态变更
+            _, trainout, nextStatus = heapq.heappop(self.events)
+            updateTrain.append(trainout)
+            updateStatus.append(nextStatus)
+        print("需要更新的火车有",len(updateTrain),"个")
+        return updateTrain, updateStatus
 
 
 # 世界状态管理

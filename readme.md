@@ -29,3 +29,5 @@
 train,status), 里面判断冷却时间等等
 
 另外timeschedule的更新可以放到world的update函数里,每个tick运行一次
+
+应该是,每次在inventory调用改变列车状态的函数时,注册一个新的倒计时
