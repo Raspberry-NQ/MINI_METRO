@@ -123,7 +123,7 @@ class Station:
 
 ###------------------------------------------>><<-----------------------------------------------------
 # 集合类
-class trainInventory:  # 记录所有火车和车厢信息.以及注意:train代表动力不载人车头,carriage代表无动力载人车厢
+class TrainInventory:  # 记录所有火车和车厢信息.以及注意:train代表动力不载人车头,carriage代表无动力载人车厢
     def __init__(self):
         self.trainNm = 0
         self.carriageNm = 0
@@ -132,6 +132,8 @@ class trainInventory:  # 记录所有火车和车厢信息.以及注意:train代
         self.carriageBusyList = []
         self.trainAbleList = []
         self.carriageAbleList = []
+
+        trainTimer = TimerScheduler()
 
     def addTrain(self):
         self.trainNm += 1
@@ -143,10 +145,10 @@ class trainInventory:  # 记录所有火车和车厢信息.以及注意:train代
         newCarr = carriage(self.carriageNm)
         self.carriageAbleList.append(newCarr)
 
-    def employeeTrain(self, train, line, station):  # 移动列车到线路,进入状态1
+    def employTrain(self, train, line, station):  # 移动列车到线路,进入状态1
         if line == 0 or line == train.line:
             print("FALSE LINE")
-            sys.exit("FALSE LINE,in \"employeeTrain()\"")
+            sys.exit("FALSE LINE,in \"employTrain()\"")
         train.line = line
         train.status = 1  # 进入上客状态
         train.stationNow = station
