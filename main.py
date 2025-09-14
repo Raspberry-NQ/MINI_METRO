@@ -13,7 +13,6 @@ import time
 import heapq
 from queue import Queue
 
-
 ###------------------------------------------>><<-----------------------------------------------------
 # 原子基础类
 trainStatusList = {1: "passengerAlighting",  # 乘客落车
@@ -28,31 +27,62 @@ class train:
     def __init__(self, number):
         self.number = number
         self.line = 0  # 0代表未放置
-        self.status = 3
         self.carriageList = []
+
+        self.status = 3
+
         self.stationNow = None
 
         self.nextStatusTime = -1  # 空闲状态如果不做操作,应该是无限保持.因此为-1
         self.nextStatus = 3
 
-    def moveTrain(self, lineNo):
-        self.line = lineNo
+    '''
+    以下五个函数写明了操作火车进入新的状态,并且返回在新的状态持续的时间,注意不是从上个状态转移到新状态的时间
+    也就是说,在调用这五个函数时,上个状态应当以及结束了
+    '''
 
-    def updateStatus(self):
-        self.nextStatusTime -= 1
-        if self.nextStatusTime == 0:  # 进入下一个状态
-            self.status = self.nextStatus
-
-    def trainArrive(self, station):
+    def setAlighting(self, station):
+        if self.status != 4:
+            sys.exit("落客前状态不对,在SETALIGHTING")
         self.status = 1
-        self.nextStatusTime = countTrainBoardingTime(station)
         self.stationNow = station
-        self.nextStatus = 2  # 下一状态改为落客
+        self.nextStatusTime = countTrainAlightingTime(self)
+        self.nextStatus = 2  # 下一个状态一般是2
+        return self.nextStatusTime
 
-    def trainLeaveStation(self):
-        self.status = 4
-        self.nextStatus = 1
-        self.nextStatusTime = calculateDistance()
+    def setBoarding(self, station):
+        if self.status not in (1, 5):
+            sys.exit("上客前状态不对,在setboarding")
+        self.status = 2
+        self.stationNow = station
+        self.nextStatusTime = countTrainBoardingTime(station)
+        self.nextStatus = 4  # 下一个状态一般是2
+        return self.nextStatusTime
+
+    def setIdle(self):
+        print("TRAIN ", self.number, "移入车库待命")
+        self.status = 3
+        self.stationNow = None
+        self.nextStatusTime = countTrainIdleTime()
+        self.nextStatus = 3  # 下一个状态一般是3
+        return self.nextStatusTime
+
+    def setRunning(self, nextStation):
+        if self.status != 2:
+            sys.exit("出站前状态不对,在setrunning")
+        self.status = 3
+        # 不修改当前station,直到落客才修改
+        self.nextStatusTime = countTrainRunningTime(self.stationNow, nextStation)
+        self.nextStatus = 1  # 下一个状态一般是3
+        return self.nextStatusTime
+
+    def setShunting(self, nextLine):
+        # 需要先进站落客再调车
+        self.status = 5
+        self.stationNow = None
+        self.nextStatusTime = countTrainShuntingime(self.line, nextLine)
+        self.nextStatus = 2  # 下一个状态一般是也就是到站直接上客,无需等待落客
+        return self.nextStatusTime
 
     def printTrain(self):
         print("车头编号:", self.number)
@@ -132,10 +162,7 @@ class MetroLine:
     def distance(self):  # 单位为刻
         dis = 0
         for i in range(0, len(self.stations) - 1):
-            dis = dis + calculateDistance(self.stations[i].x,
-                                          self.stations[i].y,
-                                          self.stations[i + 1].x,
-                                          self.stations[i + 1].y)
+            dis = dis + calculateDistance(self.stations[i], self.stations[i + 1])
         return dis
 
     def addTrainToLine(self, trainInventory):  # 返回是否成功,和加入火车的编号
@@ -155,22 +182,7 @@ class MetroLine:
 
 
 ###------------------------------------------>><<-----------------------------------------------------
-# 世界状态管理
-class GameWorld:
-    def __init__(self):
-        self.stations = []  # Station实例列表
-        self.trains = []  # Train实例列表
-        self.metroLine = []
 
-    def printInformation(self):
-        count = 0
-        for i in self.stations:
-            print("station", count)
-            i.printStation()
-            count = count + 1
-
-
-# AI MAKE @ HERE
 class TimerScheduler:
     def __init__(self):
         self.events = []  # 最小堆: (trigger_time, train_id, action)
@@ -195,31 +207,31 @@ class TimerScheduler:
             action()  # 执行状态变更
 
 
-# 列车状态机示例
-class Train:
-    def __init__(self, id):
-        self.id = id
-        self.state = "MOVING"
+# 世界状态管理
+class GameWorld:
+    def __init__(self):
+        self.stations = []  # Station实例列表
+        self.trains = []  # Train实例列表
+        self.metroLine = []
 
-    def enter_station(self):
-        print(f"列车{self.id}进站")
-        self.state = "DOCKED"
-        scheduler.register(3, self.id, self.depart)  # 3秒后触发离站
-
-    def depart(self):
-        print(f"列车{self.id}离站")
-        self.state = "MOVING"
+    def printInformation(self):
+        count = 0
+        for i in self.stations:
+            print("station", count)
+            i.printStation()
+            count = count + 1
 
 
 ###------------------------------------------>><<-----------------------------------------------------
 # 外部独立函数
-def calculateDistance(x1, y1, x2, y2):
+
+
+def calculateDistance(sta, stb):
+    x1 = sta.x
+    x2 = stb.x
+    y1 = sta.y
+    y2 = stb.y
     d = round(((x1 - x2) ** 2 + (y1 - y2) ** 2) ** (1 / 2))
-    return d
-
-
-def claculateDistance(sta, stb):
-    d = calculateDistance(sta.x, sta.y, stb.x, stb.y)
     return d
 
 
@@ -227,6 +239,28 @@ def countTrainBoardingTime(station):
     ticks = 5
     ticks += station.passengerNm * 5
     return ticks
+
+
+def countTrainAlightingTime(train):
+    ticks = 5
+    l = len(train.carriageList)
+    for i in range(1, l):
+        ticks += train.carriageList[i].currentNum * 5
+    return ticks
+
+
+def countTrainIdleTime():
+    return 9999
+
+
+def countTrainRunningTime(sta, stb):
+    return calculateDistance(sta, stb)
+
+
+def countTrainShuntingime(lineA, lineB):
+    if lineA == lineB:
+        return 10
+    return 20
 
 
 ###------------------------------------------>><<-----------------------------------------------------
@@ -241,7 +275,7 @@ if __name__ == '__main__':
     world.stations.append(Station(2, 232, 76))
     world.stations.append(Station(3, 125, 120))
 
-    print(calculateDistance(1, 2, 3, 4))
+    print(calculateDistance(world.stations[1], world.stations[0]))
     trainTest = train(1)
     trainTest.printTrain()
 
