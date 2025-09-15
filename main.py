@@ -37,7 +37,10 @@ class train:
         self.nextStatusTime = -1  # 空闲状态如果不做操作,应该是无限保持.因此为-1
         self.nextStatus = 3
 
-    def addCarriage(self, carriage):
+    def __str__(self):
+        return f" TRAIN[No.{self.number}] /{trainStatusList[self.status]}/LINE[{self.line}]/{len(self.carriageList)} carriage/ "
+
+    def connectCarriage(self, carriage):
         self.carriageList.append(carriage)
 
     '''
@@ -111,7 +114,7 @@ class carriage:
         self.line = lineNo
 
 
-class Station:
+class station:
     def __init__(self, type, x, y):
         self.type = type  # 参考stationTypeList,目前只有1,2,3
         self.x = x
@@ -119,10 +122,13 @@ class Station:
         self.passengerNm = 0
         self.connections = []  # 存储连接的Station对象
 
+    def __str__(self):
+        return f"TYPE:{self.type} / x:{self.x} y:{self.y} / "
+
     def printStation(self):
         print("Type:", end="")
-        print(self.type)
-        print("x:", self.x, " y:", self.y)
+        print(self.type,end=" / ")
+        print("x:", self.x, " y:", self.y,end=" /")
 
 
 ###------------------------------------------>><<-----------------------------------------------------
@@ -154,6 +160,7 @@ class TrainInventory:  # 记录所有火车和车厢信息.以及注意:train代
             sys.exit("火车余额不足!(在addTrainToLine)")
         newtrain = self.trainAbleList[0]
         self.trainAbleList.remove(newtrain)
+        self.trainBusyList.append(newtrain)
         return newtrain
 
     def getFreeCarriage(self):
@@ -161,6 +168,7 @@ class TrainInventory:  # 记录所有火车和车厢信息.以及注意:train代
             sys.exit("车厢余额不足!(在addTrainToLine)")
         newcarriage = self.carriageAbleList[0]
         self.carriageAbleList.remove(newcarriage)
+        self.carriageBusyList.append(newcarriage)
         return newcarriage
 
     def employTrain(self, line, station):  # 移动列车到线路,进入状态1
@@ -192,18 +200,22 @@ class MetroLine:
 
         nCarriage = trainInventory.getFreeCarriage()
         nTrain = trainInventory.getFreeTrain()
-        nTrain.addCarriage(nCarriage)
+        nTrain.connectCarriage(nCarriage)
         self.trainDirection[nTrain] = direction
-        self.trainNm+=1
+        self.trainNm += 1
 
-    def removeTrainFromLine(self, train): # 只有在调车时才会用到
+    def removeTrainFromLine(self, train):  # 只有在调车时才会用到
         if self.trainDirection[train] != None:
-            self.trainNm-=1
+            self.trainNm -= 1
             self.trainDirection.pop(train)
 
-
     def printLine(self):
-        print("正向起点", len(self.stationList), "正向终点")
+        print("正向起点", end="")
+        for i, station in enumerate(self.stationList):
+            if i > 0:
+                print(" -> ", end="")
+            print(f" ( [{i}]{station} ) ", end="")
+        print(" -> 正向终点")
 
 
 ###------------------------------------------>><<-----------------------------------------------------
@@ -240,15 +252,38 @@ class TimerScheduler:
 # 世界状态管理
 class GameWorld:
     def __init__(self):
-        self.stations = []  # Station实例列表
-        self.trains = []  # Train实例列表
-        self.metroLine = []
+        self.stations = []  # 所有Station
+
+        self.metroLine = []  # 所有线路
+
+        self.trainInventory = TrainInventory()
+
+    def worldInit(self, trainNm=1, carriageNm=1, stationNm=2):
+        print("世界初始化,车头", trainNm, "车厢", carriageNm, "站点", stationNm)
+        # 初始化资源
+        for i in range(0, trainNm):
+            self.trainInventory.addTrain()
+        for i in range(0, carriageNm):
+            self.trainInventory.addCarriage()
+        nsta = station(1, 0, 0)
+        nstb = station(2, 0, 10)
+        self.stations.append(nsta)
+        self.stations.append(nstb)
+
+        linea=MetroLine(1, self.stations)
+        self.metroLine.append(linea)
+
+        for i in range(0,len(self.metroLine)):
+            print("线路",i)
+            self.metroLine[i].printLine()
+
 
     def printInformation(self):
         count = 0
         for i in self.stations:
-            print("station", count)
+            print("station", count,end=">>")
             i.printStation()
+            print("")
             count = count + 1
 
 
@@ -296,13 +331,11 @@ if __name__ == '__main__':
     print(stationTypeList)
 
     world = GameWorld()
+    world.worldInit(trainNm=1, carriageNm=1, stationNm=2)
 
-    world.stations.append(Station(1, 0, 0))
-    world.stations.append(Station(2, 232, 76))
-    world.stations.append(Station(3, 125, 120))
+    world.printInformation()
 
-    print(countTrainRunningTime(world.stations[1], world.stations[0]))
-    trainTest = train(1)
-    trainTest.printTrain()
+    tr=train(1)
+    print(tr)
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
