@@ -175,11 +175,13 @@ class TrainInventory:  # 记录所有火车和车厢信息.以及注意:train代
         if line == 0 or line == train.line:
             print("FALSE LINE")
             sys.exit("FALSE LINE,in \"employTrain()\"")
+        train.setBoarding(station)
 
-        train.line = line
-        train.status = 1  # 进入上客状态
-        train.stationNow = station
-        train.nextStatusTime = countTrainBoardingTime(station)
+    def shuntTrain(self, train, goalLine, direction,station):
+        originLine = train.line
+        originLine.removeTrainFromLine(train)
+        stime=goalLine.shuntTrainToLine(train, direction,station)
+        self.trainTimer.register(stime,train,train.nextStatus)
 
 
 class MetroLine:
@@ -196,8 +198,7 @@ class MetroLine:
             dis = dis + countTrainRunningTime(self.stationList[i], self.stationList[i + 1])
         return dis
 
-    def addTrainToLine(self, trainInventory, direction):  # 返回是否成功,和加入火车的编号
-
+    def addNewTrainToLine(self, trainInventory, direction):  # 返回是否成功,和加入火车的编号
         nCarriage = trainInventory.getFreeCarriage()
         nTrain = trainInventory.getFreeTrain()
         nTrain.connectCarriage(nCarriage)
@@ -208,6 +209,12 @@ class MetroLine:
         if self.trainDirection[train] != None:
             self.trainNm -= 1
             self.trainDirection.pop(train)
+
+    def shuntTrainToLine(self, train, direction, station):
+        self.trainNm += 1
+        self.trainDirection[train] = direction
+        lt=train.setBoarding(station)
+        return lt
 
     def printLine(self):
         print("正向起点", end="")
@@ -307,7 +314,6 @@ class GameWorld:
         '''
         while playerCommand != "q":
 
-
             if playerCommand == "p":
                 print("跳过;")
             elif playerCommand == "shunt":
@@ -321,24 +327,16 @@ class GameWorld:
             else:
                 print("输入有误")
 
-
             playerCommand = input()
-
         self.updateOneTick()
-
         pass
 
     def updateWorld(self):
-
-
-
         pass
 
 
 ###------------------------------------------>><<-----------------------------------------------------
 # 外部独立函数
-
-
 def countTrainRunningTime(sta, stb):
     x1 = sta.x
     x2 = stb.x
