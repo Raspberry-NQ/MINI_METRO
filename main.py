@@ -36,6 +36,7 @@ class train:
 
         self.nextStatusTime = -1  # 空闲状态如果不做操作,应该是无限保持.因此为-1
         self.nextStatus = 3
+        self.enterShunting=False
 
     def __str__(self):
         return f" TRAIN[No.{self.number}] /{trainStatusList[self.status]}/LINE[{self.line}]/{len(self.carriageList)} carriage/ "
@@ -88,7 +89,7 @@ class train:
         self.status = 5
         self.stationNow = None
         self.nextStatusTime = countTrainShuntingime(self.line, nextLine)
-        self.nextStatus = 2  # 下一个状态一般是也就是到站直接上客,无需等待落客
+        self.nextStatus = 2  # 下一个状态一般是到站直接上客,无需等待落客
         return self.nextStatusTime
 
     def printTrain(self):
@@ -177,12 +178,26 @@ class TrainInventory:  # 记录所有火车和车厢信息.以及注意:train代
             sys.exit("FALSE LINE,in \"employTrain()\"")
         train.setBoarding(station)
 
-    def shuntTrain(self, train, goalLine, direction,station):
+    def shuntTrain(self, train, goalLine, direction, station):
         originLine = train.line
         originLine.removeTrainFromLine(train)
-        stime=goalLine.shuntTrainToLine(train, direction,station)
-        self.trainTimer.register(stime,train,train.nextStatus)
+        stime = goalLine.shuntTrainToLine(train, direction, station)
+        self.trainTimer.register(stime, train, train.nextStatus)
 
+    def updateAllTrain(self):
+        updateTrain, updateStatus = self.trainTimer.update(dt=1)
+        for i in range(0, len(updateTrain)):
+            print(updateTrain[i])
+            print(updateStatus[i])
+            if updateStatus[i] == 1:  # 落客
+                if updateTrain[i].status != 4:
+                    sys.exit("前状态有误,1")
+                updateTrain[i].setAlighting(updateTrain[i].line.nextStation)  # 如果到终点站则会在此处掉头
+            elif updateStatus[i] == 2:  # 上客
+                if updateStatus[i] not in (1,3,5):
+                    sys.exit("前状态有误,2")
+                if updateSttus[i] in
+                updateTrain[i].setBoarding(updateTrain[i].line.nextStation)
 
 class MetroLine:
     def __init__(self, number, stList):
@@ -206,15 +221,49 @@ class MetroLine:
         self.trainNm += 1
 
     def removeTrainFromLine(self, train):  # 只有在调车时才会用到
-        if self.trainDirection[train] != None:
+        if train in self.trainDirection:
             self.trainNm -= 1
             self.trainDirection.pop(train)
 
     def shuntTrainToLine(self, train, direction, station):
         self.trainNm += 1
         self.trainDirection[train] = direction
-        lt=train.setBoarding(station)
+        lt = train.setBoarding(station)
         return lt
+
+    def nextStation(self, train):
+        dire = self.trainDirection[train]
+        if dire == True:
+            p = self.stationList.index(train.stationNow)
+            if p == len(self.stationList) - 1:
+                print("终点站")
+                self.trainDirection[train] = False
+                return self.stationList[p - 1]
+            else:
+                return self.stationList[p + 1]
+        else:
+            p = self.stationList.index(train.stationNow)
+            if p == 0:
+                print("终点站")
+                self.trainDirection[train] = True
+                return self.stationList[p + 1]
+            else:
+                return self.stationList[p - 1]
+
+    def isAtDestination(self, train):
+        dire = self.trainDirection[train]
+        if dire == True:
+            p = self.stationList.index(train.stationNow)
+            if p == len(self.stationList) - 1:
+                return True
+            else:
+                return False
+        else:
+            p = self.stationList.index(train.stationNow)
+            if p == 0:
+                return True
+            else:
+                return False
 
     def printLine(self):
         print("正向起点", end="")
@@ -236,7 +285,6 @@ class TimerScheduler:
         """注册定时事件
         delay: 延迟时间(秒)
         train_id: 列车标识
-        action: 状态变更函数
         """
         trigger_time = self.current_time + delay
         heapq.heappush(self.events, (trigger_time, train, nextStatus))

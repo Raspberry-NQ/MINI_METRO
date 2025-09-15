@@ -46,3 +46,10 @@ train,status), 里面判断冷却时间等等
 ## 20250915
 
 调动列车时也可以包括同线路换向这一操作
+
+ALIGHTING   -<  (running)
+BOARDING    -<  (alighting,shunting,idle)
+RUNNING     -<  (BOARDING)
+SHUNTING    -<  (ALIGHTING)
+也就是,只有running->alighting/shunting->borading/idle->boarding
+这三种情况才需要修改stationNow
