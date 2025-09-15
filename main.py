@@ -127,8 +127,8 @@ class station:
 
     def printStation(self):
         print("Type:", end="")
-        print(self.type,end=" / ")
-        print("x:", self.x, " y:", self.y,end=" /")
+        print(self.type, end=" / ")
+        print("x:", self.x, " y:", self.y, end=" /")
 
 
 ###------------------------------------------>><<-----------------------------------------------------
@@ -270,21 +270,69 @@ class GameWorld:
         self.stations.append(nsta)
         self.stations.append(nstb)
 
-        linea=MetroLine(1, self.stations)
+        linea = MetroLine(1, self.stations)
         self.metroLine.append(linea)
 
-        for i in range(0,len(self.metroLine)):
-            print("线路",i)
+        for i in range(0, len(self.metroLine)):
+            print("线路", i)
             self.metroLine[i].printLine()
-
 
     def printInformation(self):
         count = 0
         for i in self.stations:
-            print("station", count,end=">>")
+            print("station", count, end=">>")
             i.printStation()
             print("")
             count = count + 1
+
+    def playerTrainShunt(self):
+
+        pass
+
+    def playerLineExtension(self):
+        pass
+
+    def playerLineInsert(self):
+        pass
+
+    def playerPassTick(self):
+        pass
+
+    def updateOneTick(self):
+        self.printInformation()
+
+        playerCommand = input()
+        '''
+        q退出游戏,p直接过一个tick,shunt调动列车,n放置空闲列车,nc连接新车厢,cl修改线路
+        '''
+        while playerCommand != "q":
+
+
+            if playerCommand == "p":
+                print("跳过;")
+            elif playerCommand == "shunt":
+                print("输入要调动的车头")
+            elif playerCommand == "n":
+                print("输入新增车辆的线路")
+            elif playerCommand == "nc":
+                print("输入要连接到的车头")
+            elif playerCommand == "cl":
+                print("输入要修改的线路")
+            else:
+                print("输入有误")
+
+
+            playerCommand = input()
+
+        self.updateOneTick()
+
+        pass
+
+    def updateWorld(self):
+
+
+
+        pass
 
 
 ###------------------------------------------>><<-----------------------------------------------------
@@ -334,8 +382,6 @@ if __name__ == '__main__':
     world.worldInit(trainNm=1, carriageNm=1, stationNm=2)
 
     world.printInformation()
-
-    tr=train(1)
-    print(tr)
+    world.updateOneTick()
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
