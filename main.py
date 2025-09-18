@@ -36,7 +36,8 @@ class train:
 
         self.nextStatusTime = -1  # 空闲状态如果不做操作,应该是无限保持.因此为-1
         self.nextStatus = 3
-        self.enterShunting=False
+        self.waitShunting=False# 接到调车指令后，running和alighting时，该状态为TRUE。在使用setshunting后为false
+        self.shuntingTargetLine=None# 同上
 
     def __str__(self):
         return f" TRAIN[No.{self.number}] /{trainStatusList[self.status]}/LINE[{self.line}]/{len(self.carriageList)} carriage/ "
@@ -86,6 +87,9 @@ class train:
 
     def setShunting(self, nextLine):
         # 需要先进站落客再调车
+        if self.waitShunting == False:
+            sys.exit("invalid")
+        self.waitShunting =False
         self.status = 5
         self.stationNow = None
         self.nextStatusTime = countTrainShuntingime(self.line, nextLine)
@@ -189,15 +193,37 @@ class TrainInventory:  # 记录所有火车和车厢信息.以及注意:train代
         for i in range(0, len(updateTrain)):
             print(updateTrain[i])
             print(updateStatus[i])
+
             if updateStatus[i] == 1:  # 落客
                 if updateTrain[i].status != 4:
                     sys.exit("前状态有误,1")
                 updateTrain[i].setAlighting(updateTrain[i].line.nextStation)  # 如果到终点站则会在此处掉头
+                continue
+
             elif updateStatus[i] == 2:  # 上客
                 if updateStatus[i] not in (1,3,5):
                     sys.exit("前状态有误,2")
-                if updateSttus[i] in
-                updateTrain[i].setBoarding(updateTrain[i].line.nextStation)
+                if updateTrain[i].waitShunting == True:
+                    updateTrain[i].waitShunting = False
+                    updateTrain[i].setShunting(updateTrain[i].shuntingTargetLine)
+                    continue
+                elif updateStatus[i] in (5,1,3):
+                    updateTrain[i].setBoarding(updateTrain[i].line.nextStation(updateTrain[i]))
+                    continue
+
+            elif updateStatus[i] == 3: #等待
+                updateTrain[i].setIdle()
+                continue
+
+            elif updateStatus[i] == 4: #running
+                updateTrain[i].setRunning(updateTrain[i].line.nextStation(updateTrain[i]))
+                continue
+
+            else:
+                sys.exit("error nextstatus")
+
+
+
 
 class MetroLine:
     def __init__(self, number, stList):
