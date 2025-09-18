@@ -53,3 +53,6 @@ RUNNING     -<  (BOARDING)
 SHUNTING    -<  (ALIGHTING)
 也就是,只有running->alighting/shunting->borading/idle->boarding
 这三种情况才需要修改stationNow
+
+## 20250918
+在train添加了一个waitshunting的flag，以及targetline，来记录是否处于侯调车状态

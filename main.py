@@ -27,7 +27,7 @@ trainStatusList = {1: "passengerAlighting",  # 乘客落车
 class train:
     def __init__(self, number):
         self.number = number
-        self.line = 0  # 0代表未放置
+        self.line = None  # 0代表未放置
         self.carriageList = []
 
         self.status = 3
@@ -40,7 +40,7 @@ class train:
         self.shuntingTargetLine=None# 同上
 
     def __str__(self):
-        return f" TRAIN[No.{self.number}] /{trainStatusList[self.status]}/LINE[{self.line}]/{len(self.carriageList)} carriage/ "
+        return f" TRAIN[No.{self.number}] /{trainStatusList[self.status]}/LINE[{self.line}]/station:{self.stationNow}/{len(self.carriageList)} carriage/time:{self.nextStatusTime} "
 
     def connectCarriage(self, carriage):
         self.carriageList.append(carriage)
@@ -60,7 +60,7 @@ class train:
         return self.nextStatusTime
 
     def setBoarding(self, station):
-        if self.status not in (1, 5):
+        if self.status not in (1,3, 5):
             sys.exit("上客前状态不对,在setboarding")
         self.status = 2
         self.stationNow = station
@@ -82,7 +82,7 @@ class train:
         self.status = 4
         # 不修改当前station,直到落客才修改
         self.nextStatusTime = countTrainRunningTime(self.stationNow, nextStation)
-        self.nextStatus = 1  # 下一个状态一般是3
+        self.nextStatus = 1  # 下一个状态一般是1
         return self.nextStatusTime
 
     def setShunting(self, nextLine):
@@ -111,7 +111,7 @@ class carriage:
         self.number = number
         self.line = 0
         self.capacity = 6  # 车厢容量,默认为6
-        self.currNum = 0  # 当前人数
+        self.currentNum = 0  # 当前人数
 
     def moveCarriage(self, lineNo):  ###<<----------------
         # 注意此操作后,要到下一个站点才能正式操作
@@ -177,10 +177,16 @@ class TrainInventory:  # 记录所有火车和车厢信息.以及注意:train代
         return newcarriage
 
     def employTrain(self, line, station):  # 移动列车到线路,进入状态1
+        train=self.getFreeTrain()
+        nca=self.getFreeCarriage()
+        train.connectCarriage(nca)
         if line == 0 or line == train.line:
             print("FALSE LINE")
             sys.exit("FALSE LINE,in \"employTrain()\"")
-        train.setBoarding(station)
+
+        dt=train.setBoarding(station)
+        line.addNewTrainToLine(train,station,True)
+        self.trainTimer.register(dt, train,train.nextStatus)
 
     def shuntTrain(self, train, goalLine, direction, station):
         originLine = train.line
@@ -189,6 +195,7 @@ class TrainInventory:  # 记录所有火车和车厢信息.以及注意:train代
         self.trainTimer.register(stime, train, train.nextStatus)
 
     def updateAllTrain(self):
+
         updateTrain, updateStatus = self.trainTimer.update(dt=1)
         for i in range(0, len(updateTrain)):
             print(updateTrain[i])
@@ -197,31 +204,40 @@ class TrainInventory:  # 记录所有火车和车厢信息.以及注意:train代
             if updateStatus[i] == 1:  # 落客
                 if updateTrain[i].status != 4:
                     sys.exit("前状态有误,1")
-                updateTrain[i].setAlighting(updateTrain[i].line.nextStation)  # 如果到终点站则会在此处掉头
+                dt=updateTrain[i].setAlighting(updateTrain[i].line.nextStation)  # 如果到终点站则会在此处掉头
+                self.trainTimer.register(dt,updateTrain[i],updateTrain[i].nextStatus)
                 continue
 
             elif updateStatus[i] == 2:  # 上客
-                if updateStatus[i] not in (1,3,5):
-                    sys.exit("前状态有误,2")
+
                 if updateTrain[i].waitShunting == True:
                     updateTrain[i].waitShunting = False
-                    updateTrain[i].setShunting(updateTrain[i].shuntingTargetLine)
+                    dt=updateTrain[i].setShunting(updateTrain[i].shuntingTargetLine)
+                    self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
                     continue
                 elif updateStatus[i] in (5,1,3):
-                    updateTrain[i].setBoarding(updateTrain[i].line.nextStation(updateTrain[i]))
+                    dt=updateTrain[i].setBoarding(updateTrain[i].line.nextStation(updateTrain[i]))
+                    self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
                     continue
 
             elif updateStatus[i] == 3: #等待
-                updateTrain[i].setIdle()
+                dt=updateTrain[i].setIdle()
+                self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
                 continue
 
             elif updateStatus[i] == 4: #running
-                updateTrain[i].setRunning(updateTrain[i].line.nextStation(updateTrain[i]))
+                dt=updateTrain[i].setRunning(updateTrain[i].line.nextStation(updateTrain[i]))
+                self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
                 continue
 
             else:
                 sys.exit("error nextstatus")
 
+    def printInformation(self):
+        print("车库信息->")
+        print("车头数量",self.trainNm)
+        for i in range(0,len(self.trainBusyList)):
+            print(self.trainBusyList[i])
 
 
 
@@ -239,11 +255,10 @@ class MetroLine:
             dis = dis + countTrainRunningTime(self.stationList[i], self.stationList[i + 1])
         return dis
 
-    def addNewTrainToLine(self, trainInventory, direction):  # 返回是否成功,和加入火车的编号
-        nCarriage = trainInventory.getFreeCarriage()
-        nTrain = trainInventory.getFreeTrain()
-        nTrain.connectCarriage(nCarriage)
-        self.trainDirection[nTrain] = direction
+    def addNewTrainToLine(self, train, station,direction):  # 返回是否成功,和加入火车的编号
+
+        train.line=self
+        self.trainDirection[train] = direction
         self.trainNm += 1
 
     def removeTrainFromLine(self, train):  # 只有在调车时才会用到
@@ -326,6 +341,8 @@ class TimerScheduler:
             _, trainout, nextStatus = heapq.heappop(self.events)
             updateTrain.append(trainout)
             updateStatus.append(nextStatus)
+        print("定时器更新一次")
+        print(self.events)
         print("需要更新的火车有", len(updateTrain), "个")
         return updateTrain, updateStatus
 
@@ -354,6 +371,8 @@ class GameWorld:
         linea = MetroLine(1, self.stations)
         self.metroLine.append(linea)
 
+        self.trainInventory.employTrain(linea,nsta)
+
         for i in range(0, len(self.metroLine)):
             print("线路", i)
             self.metroLine[i].printLine()
@@ -365,6 +384,7 @@ class GameWorld:
             i.printStation()
             print("")
             count = count + 1
+        self.trainInventory.printInformation()
 
     def playerTrainShunt(self):
 
@@ -382,9 +402,10 @@ class GameWorld:
     def updateOneTick(self):
         self.printInformation()
 
-        playerCommand = input()
+        #playerCommand = input()
         '''
         q退出游戏,p直接过一个tick,shunt调动列车,n放置空闲列车,nc连接新车厢,cl修改线路
+        '''
         '''
         while playerCommand != "q":
 
@@ -402,7 +423,10 @@ class GameWorld:
                 print("输入有误")
 
             playerCommand = input()
-        self.updateOneTick()
+        '''
+        self.trainInventory.updateAllTrain()
+        print("---------------------------------------")
+        self.trainInventory.printInformation()
         pass
 
     def updateWorld(self):
@@ -452,8 +476,13 @@ if __name__ == '__main__':
 
     world = GameWorld()
     world.worldInit(trainNm=1, carriageNm=1, stationNm=2)
+    for i in range(1,500):
+        world.updateOneTick()
+
 
     world.printInformation()
-    world.updateOneTick()
+
+
+
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
