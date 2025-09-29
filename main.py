@@ -22,7 +22,7 @@ class RoutePlanner:
         self.metro_system = metro_system
         self.transfer_penalty = 5  # 换乘惩罚时间
         self.route_cache = {}  # 路径缓存
-    
+
     def find_route(self, origin_station, destination_station, passenger_preference="fastest"):
         """
         寻找从起点到终点的最优路径
@@ -31,10 +31,10 @@ class RoutePlanner:
         cache_key = (origin_station, destination_station, passenger_preference)
         if cache_key in self.route_cache:
             return self.route_cache[cache_key]
-        
+
         # 构建图结构
         graph = self._build_transit_graph()
-        
+
         # 根据乘客偏好选择算法
         if passenger_preference == "fastest":
             route = self._dijkstra_fastest(graph, origin_station, destination_station)
@@ -42,14 +42,14 @@ class RoutePlanner:
             route = self._dijkstra_least_transfer(graph, origin_station, destination_station)
         else:  # balanced
             route = self._dijkstra_balanced(graph, origin_station, destination_station)
-        
+
         self.route_cache[cache_key] = route
         return route
-    
+
     def _build_transit_graph(self):
         """构建地铁网络图"""
         graph = defaultdict(list)
-        
+
         # 添加同一条线路内的连接
         for line in self.metro_system.metroLine:
             stations = line.stationList
@@ -70,7 +70,7 @@ class RoutePlanner:
                     'time': self._calculate_travel_time(stations[i + 1], stations[i]),
                     'transfer': False
                 })
-        
+
         # 添加换乘连接（同一站点的不同线路）
         for station in self.metro_system.stations:
             lines_at_station = self._get_lines_at_station(station)
@@ -84,9 +84,9 @@ class RoutePlanner:
                         'time': self.transfer_penalty,
                         'transfer': True
                     })
-        
+
         return graph
-    
+
     def _get_lines_at_station(self, station):
         """获取经过指定站点的所有线路"""
         lines = []
@@ -94,52 +94,52 @@ class RoutePlanner:
             if station in line.stationList:
                 lines.append(line)
         return lines
-    
+
     def _calculate_travel_time(self, station1, station2):
         """计算两站之间的行驶时间"""
         return countTrainRunningTime(station1, station2)
-    
+
     def _dijkstra_fastest(self, graph, start, end):
         """Dijkstra算法 - 寻找最快路径"""
         return self._dijkstra(graph, start, end, weight_func=lambda edge: edge['time'])
-    
+
     def _dijkstra_least_transfer(self, graph, start, end):
         """Dijkstra算法 - 寻找最少换乘路径"""
         return self._dijkstra(graph, start, end, weight_func=lambda edge: 1000 if edge['transfer'] else 1)
-    
+
     def _dijkstra_balanced(self, graph, start, end):
         """Dijkstra算法 - 平衡时间和换乘次数"""
         return self._dijkstra(graph, start, end, weight_func=lambda edge: edge['time'] + (50 if edge['transfer'] else 0))
-    
+
     def _dijkstra(self, graph, start, end, weight_func):
         """通用Dijkstra算法实现"""
         distances = {start: 0}
         previous = {}
         pq = [(0, start)]
-        
+
         while pq:
             current_dist, current = heapq.heappop(pq)
-            
+
             if current == end:
                 break
-            
+
             if current_dist > distances.get(current, float('inf')):
                 continue
-            
+
             for edge in graph[current]:
                 neighbor = edge['station']
                 weight = weight_func(edge)
                 new_dist = current_dist + weight
-                
+
                 if new_dist < distances.get(neighbor, float('inf')):
                     distances[neighbor] = new_dist
                     previous[neighbor] = (current, edge)
                     heapq.heappush(pq, (new_dist, neighbor))
-        
+
         # 重构路径
         if end not in previous:
             return None
-        
+
         path = []
         current = end
         while current != start:
@@ -151,14 +151,14 @@ class RoutePlanner:
                 'transfer': edge['transfer']
             })
             current = prev_station
-        
+
         path.insert(0, {
             'station': start,
             'line': None,
             'direction': None,
             'transfer': False
         })
-        
+
         return path
 
 ###------------------------------------------>><<-----------------------------------------------------
@@ -189,10 +189,10 @@ class train:
 
     def __str__(self):
         if self.stationNow:
-            self.stationNow.printStation()
-            return f" TRAIN[No.{self.number}] /{trainStatusList[self.status]}/LINE[{self.line.number}]/station:({self.stationNow.x},{self.stationNow.y})/{len(self.carriageList)} carriage/time:{self.nextStatusTime} "
+            #self.stationNow.printStation()
+            return f"<TRAIN/ID:{self.number}/{trainStatusList[self.status]}/LINE[{self.line.number}]/station ID:{self.stationNow.id}/carriageNum:{len(self.carriageList)}/time:{self.nextStatusTime}/>"
         else:
-            return f" TRAIN[No.{self.number}] /{trainStatusList[self.status]}/LINE[{self.line.number}]/station:None/{len(self.carriageList)} carriage/time:{self.nextStatusTime} "
+            return f"<TRAIN/ID:{self.number}/{trainStatusList[self.status]}/LINE[{self.line.number}]/station ID:None/carriageNum:{len(self.carriageList)}/time:{self.nextStatusTime}/>"
 
     def connectCarriage(self, carriage):
         self.carriageList.append(carriage)
@@ -268,52 +268,55 @@ class Passenger:
         self.status = "waiting"  # waiting, boarding, on_train, transferring, arrived
         self.patience = 100
         self.preference = preference  # 路径偏好
-        
+
         # 路径相关
         self.planned_route = None
         self.current_route_index = 0
         self.target_line = None
         self.target_direction = None
         self.transfer_waiting = False
-        
+
+    def __str__(self):
+        return f"<PASSENGER/ID:{self.passenger_id}/{self.origin_station.id}->{self.destination_station.id}/{self.status}/>"
+
     def plan_route(self, route_planner):
         """规划路径"""
         self.planned_route = route_planner.find_route(
-            self.origin_station, 
-            self.destination_station, 
+            self.origin_station,
+            self.destination_station,
             self.preference
         )
         if self.planned_route:
             self._update_current_target()
-    
+
     def _update_current_target(self):
         """更新当前目标线路和方向"""
         if not self.planned_route or self.current_route_index >= len(self.planned_route):
             return
-        
+
         current_route_step = self.planned_route[self.current_route_index]
         self.target_line = current_route_step['line']
         self.target_direction = current_route_step['direction']
-    
+
     def should_board_train(self, train):
         """判断是否应该上这班车"""
         if not self.planned_route or self.status != "waiting":
             return False
-        
+
         # 检查是否是目标线路
         if train.line != self.target_line:
             return False
-        
+
         # 检查方向是否正确
         if train.line.trainDirection.get(train) != self.target_direction:
             return False
-        
+
         # 检查是否在正确的站点
         if train.stationNow != self.current_station:
             return False
-        
+
         return True
-    
+
     def board_train(self, train):
         """上车"""
         if self.should_board_train(train):
@@ -321,17 +324,17 @@ class Passenger:
             self.current_station = None
             return True
         return False
-    
+
     def alight_train(self, station):
         """下车"""
         self.current_station = station
         self.current_route_index += 1
-        
+
         if station == self.destination_station:
             self.status = "arrived"
         else:
             # 检查是否需要换乘
-            if (self.planned_route and 
+            if (self.planned_route and
                 self.current_route_index < len(self.planned_route) and
                 self.planned_route[self.current_route_index]['transfer']):
                 self.status = "transferring"
@@ -340,12 +343,12 @@ class Passenger:
             else:
                 self.status = "waiting"
                 self.transfer_waiting = False
-    
+
     def update_waiting_time(self):
         """更新等待时间"""
         if self.status in ["waiting", "transferring"]:
             self.waiting_time += 1
-    
+
     def is_impatient(self):
         """检查是否失去耐心"""
         return self.waiting_time > self.patience
@@ -365,7 +368,8 @@ class carriage:
 
 
 class station:
-    def __init__(self, type, x, y):
+    def __init__(self, id,type, x, y):
+        self.id=id
         self.type = type  # 参考stationTypeList,目前只有1,2,3
         self.x = x
         self.y = y
@@ -374,7 +378,7 @@ class station:
         self.connections = []  # 存储连接的Station对象
 
     def __str__(self):
-        return f"TYPE:{self.type} / x:{self.x} y:{self.y} / "
+        return f"<STATION/ID:{self.id}/TYPE:{self.type} / x:{self.x} y:{self.y} /> "
 
     def printStation(self):
         print("Type:", end="")
@@ -390,13 +394,13 @@ class PassengerManager:
         self.passenger_id_counter = 0
         self.route_planner = RoutePlanner(metro_system)
         self.metro_system = metro_system
-    
+
     def generate_passenger(self, origin, destination, preference="fastest"):
         """生成新乘客并规划路径"""
         self.passenger_id_counter += 1
         passenger = Passenger(self.passenger_id_counter, origin, destination, preference)
         passenger.plan_route(self.route_planner)
-        
+
         if passenger.planned_route:
             self.passenger_list.append(passenger)
             origin.passenger_list.append(passenger)
@@ -405,32 +409,32 @@ class PassengerManager:
         else:
             print(f"乘客 {passenger.passenger_id} 无法找到路径")
             return None
-    
+
     def process_passenger_boarding(self, train):
         """处理乘客上车"""
         station = train.stationNow
         passengers_to_board = []
-        
+
         for passenger in station.passenger_list[:]:  # 使用切片避免修改列表时的问题
             if passenger.should_board_train(train):
                 if passenger.board_train(train):
                     passengers_to_board.append(passenger)
                     station.passenger_list.remove(passenger)
                     station.passengerNm = len(station.passenger_list)  # 更新乘客数量
-                    
+
                     # 将乘客添加到车厢
                     if train.carriageList:
                         carriage = train.carriageList[0]  # 简化：使用第一个车厢
                         if len(carriage.passenger_list) < carriage.capacity:
                             carriage.passenger_list.append(passenger)
                             carriage.currentNum = len(carriage.passenger_list)
-        
+
         return passengers_to_board
-    
+
     def process_passenger_alighting(self, train):
         """处理乘客下车"""
         passengers_to_alight = []
-        
+
         for carriage in train.carriageList:
             for passenger in carriage.passenger_list[:]:
                 if passenger.current_route_index >= len(passenger.planned_route) - 1:
@@ -445,32 +449,32 @@ class PassengerManager:
                     passengers_to_alight.append(passenger)
                     carriage.passenger_list.remove(passenger)
                     carriage.currentNum = len(carriage.passenger_list)
-        
+
         # 将下车的乘客添加到站点
         for passenger in passengers_to_alight:
             if passenger.status != "arrived":
                 train.stationNow.passenger_list.append(passenger)
                 train.stationNow.passengerNm = len(train.stationNow.passenger_list)
-        
+
         return passengers_to_alight
-    
+
     def _should_transfer(self, passenger, current_station):
         """判断乘客是否需要在当前站换乘"""
         if not passenger.planned_route or passenger.current_route_index >= len(passenger.planned_route):
             return False
-        
+
         next_step = passenger.planned_route[passenger.current_route_index + 1]
         return next_step['transfer'] and next_step['station'] == current_station
-    
+
     def update_all_passengers(self):
         """更新所有乘客状态"""
         for passenger in self.passenger_list[:]:
             passenger.update_waiting_time()
-            
+
             if passenger.is_impatient() and passenger.status in ["waiting", "transferring"]:
                 print(f"乘客 {passenger.passenger_id} 失去耐心离开了")
                 self.remove_passenger(passenger)
-    
+
     def remove_passenger(self, passenger):
         """移除乘客"""
         if passenger in self.passenger_list:
@@ -561,7 +565,9 @@ class TrainInventory:  # 记录所有火车和车厢信息.以及注意:train代
 
             elif updateStatus[i] == 2:  # 上客
                 # 处理乘客上车
-                if self.passenger_manager:
+                if self.passenger_manager==None:
+                    sys.exit("passengermanager is None")
+                else:
                     self.passenger_manager.process_passenger_boarding(updateTrain[i])
 
                 if updateTrain[i].waitShunting == True:
@@ -600,7 +606,7 @@ class TrainInventory:  # 记录所有火车和车厢信息.以及注意:train代
         print("车头数量",self.trainNm)
         for i in range(0,len(self.trainBusyList)):
             print(self.trainBusyList[i])
-        
+
         # 打印乘客信息
         if self.passenger_manager:
             print("乘客信息->")
@@ -710,8 +716,6 @@ class TimerScheduler:
             _, trainout, nextStatus = heapq.heappop(self.events)
             updateTrain.append(trainout)
             updateStatus.append(nextStatus)
-        print("定时器更新一次")
-        print(self.events)
         print("需要更新的火车有", len(updateTrain), "个")
         self.printSchedule()
         return updateTrain, updateStatus
@@ -742,8 +746,8 @@ class GameWorld:
             self.trainInventory.addTrain()
         for i in range(0, carriageNm):
             self.trainInventory.addCarriage()
-        nsta = station(1, 0, 0)
-        nstb = station(2, 0, 10)
+        nsta = station(1,1, 0, 0)
+        nstb = station(2,2, 0, 10)
         self.stations.append(nsta)
         self.stations.append(nstb)
 
@@ -756,14 +760,7 @@ class GameWorld:
             print("线路", i)
             self.metroLine[i].printLine()
 
-    def printInformation(self):
-        count = 0
-        for i in self.stations:
-            print("station", count, end=">>")
-            i.printStation()
-            print("")
-            count = count + 1
-        self.trainInventory.printInformation()
+
 
     def playerTrainShunt(self):
 
@@ -813,20 +810,38 @@ class GameWorld:
             playerCommand = input()
         '''
         self.trainInventory.updateAllTrain()
-        
+
         # 更新乘客状态
         self.passenger_manager.update_all_passengers()
-        
+
         # 随机生成新乘客（每10个tick生成一个）
         if random.randint(1, 10) == 1:
             self.generate_random_passenger()
-        
+        self.printInformation()
         print("---------------------------------------")
-        self.trainInventory.printInformation()
+        #self.trainInventory.printInformation()
         pass
 
     def updateWorld(self):
         pass
+
+    def printInformation(self):
+        # 整个系统划分为：车/站/人/定时器
+        """
+        车：打印车列表
+        """
+        print("车库信息")
+        print("在运行车辆：",self.trainInventory.trainBusyList.__len__())
+        for i in self.trainInventory.trainBusyList:
+            print(i)
+        print("站点线路信息")
+        for i in self.stations:
+            print(i)
+        print("乘客信息")
+
+        print("定时器状态")
+
+        print("游戏状态")
 
 
 ###------------------------------------------>><<-----------------------------------------------------
@@ -872,13 +887,9 @@ if __name__ == '__main__':
 
     world = GameWorld()
     world.worldInit(trainNm=1, carriageNm=1, stationNm=2)
-    for i in range(1,500):
+    for i in range(1,20):
         world.updateOneTick()
 
 
 
 
-
-
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
