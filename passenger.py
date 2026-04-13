@@ -52,3 +52,21 @@ class Passenger:
             self.current_station = None
             return True
         return False
+
+    def alight_train(self, station):
+        self.current_station = station
+        # 完成当前路段, 推进到下一段
+        self.current_route_index += 1
+        if self.current_station == self.destination_station:
+            self.status = "arrived"
+        elif not self.planned_route or self.current_route_index >= len(self.planned_route):
+            self.status = "arrived"
+        else:
+            self.status = "waiting"
+            self._update_current_target()
+
+    def update_waiting_time(self):
+        self.waiting_time += 1
+
+    def is_impatient(self):
+        return self.waiting_time >= self.patience

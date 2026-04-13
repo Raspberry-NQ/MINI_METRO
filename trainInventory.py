@@ -50,6 +50,18 @@ class TrainInventory:
         self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
 
     def shuntTrain(self, train, goalLine, direction, station):
+        # 调车前先让所有乘客下车
+        if self.passenger_manager and train.stationNow:
+            self.passenger_manager.process_passenger_alighting(train)
+        # 清空剩余乘客（不在当前站下车的也强制下车）
+        for c in train.carriageList:
+            for p in c.passenger_list[:]:
+                p.alight_train(train.stationNow)
+                if p.status != "arrived":
+                    train.stationNow.passenger_list.append(p)
+                    train.stationNow.passengerNm = len(train.stationNow.passenger_list)
+            c.passenger_list.clear()
+            c.currentNum = 0
         originLine = train.line
         originLine.removeTrainFromLine(train)
         stime = goalLine.shuntTrainToLine(train, direction, station)
@@ -57,30 +69,35 @@ class TrainInventory:
 
     def updateAllTrain(self):
         updateTrain, updateStatus = self.trainTimer.update(dt=1)
-        if updateTrain:
-            print("-------------\n！！！有更新！！！\n---------------")
         for i in range(len(updateTrain)):
-            print(updateTrain[i])
-            print(updateStatus[i])
             if updateStatus[i] == 1:  # 落客
                 if updateTrain[i].status != 4:
                     sys.exit("前状态有误,1")
                 if self.passenger_manager:
                     self.passenger_manager.process_passenger_alighting(updateTrain[i])
-                dt = updateTrain[i].setAlighting(updateTrain[i].line.nextStation(updateTrain[i]))
+                dt = updateTrain[i].setAlighting(updateTrain[i].nextStationTarget)
                 self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
             elif updateStatus[i] == 2:  # 上客
-                if self.passenger_manager is None:
-                    sys.exit("passengermanager is None")
-                else:
-                    self.passenger_manager.process_passenger_boarding(updateTrain[i])
                 if updateTrain[i].waitShunting:
-                    updateTrain[i].waitShunting = False
                     dt = updateTrain[i].setShunting(updateTrain[i].shuntingTargetLine)
                     self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
+                elif updateTrain[i].stationNow is None and updateTrain[i].shuntingTargetStation:
+                    # shunting 完成后在新线路上线
+                    target_station = updateTrain[i].shuntingTargetStation
+                    target_line = updateTrain[i].line
+                    dt = updateTrain[i].setBoarding(target_station)
+                    target_line.addNewTrainToLine(updateTrain[i], target_station, True)
+                    if self.passenger_manager:
+                        self.passenger_manager.process_passenger_boarding(updateTrain[i])
+                    updateTrain[i].shuntingTargetStation = None
+                    self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
                 else:
-                    next_station = updateTrain[i].stationNow
-                    dt = updateTrain[i].setBoarding(next_station)
+                    if self.passenger_manager is None:
+                        sys.exit("passengermanager is None")
+                    else:
+                        self.passenger_manager.process_passenger_boarding(updateTrain[i])
+                    current_station = updateTrain[i].stationNow
+                    dt = updateTrain[i].setBoarding(current_station)
                     self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
             elif updateStatus[i] == 3:  # 等待
                 if updateTrain[i].line and updateTrain[i].line.nextStation(updateTrain[i]):

@@ -23,10 +23,12 @@ class MetroLine:
         if train in self.trainDirection:
             self.trainNm -= 1
             self.trainDirection.pop(train)
+            train.line = None
 
     def shuntTrainToLine(self, train, direction, station):
         self.trainNm += 1
         self.trainDirection[train] = direction
+        train.line = self
         lt = train.setBoarding(station)
         return lt
 

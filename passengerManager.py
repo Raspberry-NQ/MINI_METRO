@@ -26,28 +26,39 @@ class PassengerManager:
         station = train.stationNow
         passengers_to_board = []
         for passenger in station.passenger_list[:]:
-            if passenger.should_board_train(train):
-                if passenger.board_train(train):
-                    passengers_to_board.append(passenger)
-                    station.passenger_list.remove(passenger)
-                    station.passengerNm = len(station.passenger_list)
-                    if train.carriageList:
-                        carriage = train.carriageList[0]
-                        if len(carriage.passenger_list) < carriage.capacity:
-                            carriage.passenger_list.append(passenger)
-                            carriage.currentNum = len(carriage.passenger_list)
+            if not passenger.should_board_train(train):
+                continue
+            # 检查车厢容量，无车厢或满员则跳过
+            if not train.carriageList:
+                continue
+            carriage = train.carriageList[0]
+            if len(carriage.passenger_list) >= carriage.capacity:
+                continue
+            if passenger.board_train(train):
+                passengers_to_board.append(passenger)
+                station.passenger_list.remove(passenger)
+                station.passengerNm = len(station.passenger_list)
+                for c in train.carriageList:
+                    if len(c.passenger_list) < c.capacity:
+                        c.passenger_list.append(passenger)
+                        c.currentNum = len(c.passenger_list)
+                        break
         return passengers_to_board
 
     def process_passenger_alighting(self, train):
         passengers_to_alight = []
         for carriage in train.carriageList:
             for passenger in carriage.passenger_list[:]:
-                if passenger.current_route_index >= len(passenger.planned_route) - 1:
-                    passenger.alight_train(train.stationNow)
-                    passengers_to_alight.append(passenger)
-                    carriage.passenger_list.remove(passenger)
-                    carriage.currentNum = len(carriage.passenger_list)
-                elif self._should_transfer(passenger, train.stationNow):
+                should_alight = False
+                # 到达目的地
+                if train.stationNow == passenger.destination_station:
+                    should_alight = True
+                # 到达路线中指定的换乘/下车站
+                elif passenger.planned_route:
+                    step = passenger.planned_route[passenger.current_route_index]
+                    if step.get('station') == train.stationNow:
+                        should_alight = True
+                if should_alight:
                     passenger.alight_train(train.stationNow)
                     passengers_to_alight.append(passenger)
                     carriage.passenger_list.remove(passenger)
@@ -67,9 +78,6 @@ class PassengerManager:
     def update_all_passengers(self):
         for passenger in self.passenger_list[:]:
             passenger.update_waiting_time()
-            if passenger.is_impatient() and passenger.status in ["waiting", "transferring"]:
-                print(f"乘客 {passenger.passenger_id} 失去耐心离开了")
-                self.remove_passenger(passenger)
 
     def remove_passenger(self, passenger):
         if passenger in self.passenger_list:
