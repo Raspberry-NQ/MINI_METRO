@@ -1,26 +1,41 @@
-# external_functions.py — 列车时间计算函数
-import math
+# external_functions.py
+# 列车各类时间计算的独立函数
 
-def countTrainRunningTime(station_a, station_b):
-    """根据两站坐标计算运行时间"""
-    dx = station_a.x - station_b.x
-    dy = station_a.y - station_b.y
-    distance = math.sqrt(dx * dx + dy * dy)
-    return max(1, int(distance / 100 * 3))
+
+def countTrainRunningTime(sta, stb):
+    """计算两站之间运行时间（基于距离）"""
+    x1 = sta.x
+    x2 = stb.x
+    y1 = sta.y
+    y2 = stb.y
+    d = round(((x1 - x2) ** 2 + (y1 - y2) ** 2) ** (1 / 2))
+    return d
+
 
 def countTrainBoardingTime(station):
-    """上车时间，与站内乘客数成正比"""
-    return 1 + len(station.passenger_list)
+    """计算上客时间"""
+    ticks = 5
+    ticks += station.passengerNm * 5
+    return ticks
+
 
 def countTrainAlightingTime(train):
-    """下车时间，与车厢内乘客数成正比"""
-    total = sum(len(c.passenger_list) for c in train.carriageList)
-    return 1 + total
+    """计算落客时间"""
+    ticks = 5
+    for carriage in train.carriageList:
+        ticks += carriage.currentNum * 5
+    return ticks
+
 
 def countTrainIdleTime():
-    """待命时间"""
-    return 1
+    """空闲状态持续时间"""
+    return 5
 
-def countTrainShuntingime(origin_line, target_line):
+
+def countTrainShuntingime(lineA, lineB):
     """调车时间"""
-    return 2
+    if lineA is None or lineB is None:
+        return 20
+    if lineA == lineB:
+        return 10
+    return 20

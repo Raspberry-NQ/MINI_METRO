@@ -1,17 +1,27 @@
-# train_inventory.py
-import sys
-from timer_scheduler import TimerScheduler
-from train import train
+# trainInventory.py
+
+from train import train, TrainError, trainStatusList
 from carriage import carriage
+from timer_scheduler import TimerScheduler
+
+
+class ResourceError(Exception):
+    """资源不足错误"""
+    pass
+
 
 class TrainInventory:
+    """记录所有火车和车厢信息。train代表动力不载人车头,carriage代表无动力载人车厢"""
+
     def __init__(self, passenger_manager=None):
         self.trainNm = 0
         self.carriageNm = 0
+
         self.trainBusyList = []
         self.carriageBusyList = []
         self.trainAbleList = []
         self.carriageAbleList = []
+
         self.trainTimer = TimerScheduler()
         self.passenger_manager = passenger_manager
 
@@ -26,87 +36,148 @@ class TrainInventory:
         self.carriageAbleList.append(newCarr)
 
     def getFreeTrain(self):
-        if not self.trainAbleList:
-            sys.exit("火车余额不足!(在addTrainToLine)")
-        newtrain = self.trainAbleList.pop(0)
+        if len(self.trainAbleList) == 0:
+            raise ResourceError("火车余额不足!(在getFreeTrain)")
+        newtrain = self.trainAbleList[0]
+        self.trainAbleList.remove(newtrain)
         self.trainBusyList.append(newtrain)
         return newtrain
 
     def getFreeCarriage(self):
-        if not self.carriageAbleList:
-            sys.exit("车厢余额不足!(在addTrainToLine)")
-        newcarriage = self.carriageAbleList.pop(0)
+        if len(self.carriageAbleList) == 0:
+            raise ResourceError("车厢余额不足!(在getFreeCarriage)")
+        newcarriage = self.carriageAbleList[0]
+        self.carriageAbleList.remove(newcarriage)
         self.carriageBusyList.append(newcarriage)
         return newcarriage
 
-    def employTrain(self, line, station):
+    def employTrain(self, line, station, direction=True):
+        """移动列车到线路,进入上客状态"""
         train_obj = self.getFreeTrain()
-        carriage_obj = self.getFreeCarriage()
-        train_obj.connectCarriage(carriage_obj)
-        if line == 0 or line == train_obj.line:
-            sys.exit("FALSE LINE,in \"employTrain()\"")
+        nca = self.getFreeCarriage()
+        train_obj.connectCarriage(nca)
+
+        if line is None or line == train_obj.line:
+            raise TrainError(f"无效线路,在employTrain()")
+
         dt = train_obj.setBoarding(station)
-        line.addNewTrainToLine(train_obj, station, True)
+        line.addNewTrainToLine(train_obj, station, direction)
         self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
 
-    def shuntTrain(self, train, goalLine, direction, station):
-        # 调车前先让所有乘客下车
-        if self.passenger_manager and train.stationNow:
-            self.passenger_manager.process_passenger_alighting(train)
-        # 清空剩余乘客（不在当前站下车的也强制下车）
-        for c in train.carriageList:
-            for p in c.passenger_list[:]:
-                p.alight_train(train.stationNow)
-                if p.status != "arrived":
-                    train.stationNow.passenger_list.append(p)
-                    train.stationNow.passengerNm = len(train.stationNow.passenger_list)
-            c.passenger_list.clear()
-            c.currentNum = 0
-        originLine = train.line
-        originLine.removeTrainFromLine(train)
-        stime = goalLine.shuntTrainToLine(train, direction, station)
-        self.trainTimer.register(stime, train, train.nextStatus)
+    def shuntTrain(self, train_obj, goalLine, direction, station):
+        """将列车从当前线路调到目标线路（立即调车，列车已停在站上）"""
+        # 强制乘客下车
+        if self.passenger_manager:
+            self.passenger_manager.force_alight_all(train_obj, station)
+
+        originLine = train_obj.line
+
+        # 设置 waitShunting 标志，使 setShunting 可以调用
+        train_obj.waitShunting = True
+        train_obj.shuntingTargetLine = goalLine
+        train_obj.shuntingTargetStation = station
+        train_obj.shuntingTargetDirection = direction
+
+        # setShunting 内部会用 self.line 计算调车时间，所以必须在 removeTrainFromLine 之前
+        dt = train_obj.setShunting(goalLine, arrival_station=station)
+
+        # 从原线路移除（setShunting 之后，此时 self.line 仍指向原线路）
+        originLine.removeTrainFromLine(train_obj)
+
+        # 加入新线路
+        goalLine.addNewTrainToLine(train_obj, station, direction)
+        self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
 
     def updateAllTrain(self):
         updateTrain, updateStatus = self.trainTimer.update(dt=1)
-        for i in range(len(updateTrain)):
+        if len(updateTrain) != 0:
+            print('''           -------------
+                    ！！！有更新！！！
+                    ---------------''')
+        for i in range(0, len(updateTrain)):
+            print(updateTrain[i])
+            print(updateStatus[i])
+
             if updateStatus[i] == 1:  # 落客
                 if updateTrain[i].status != 4:
-                    sys.exit("前状态有误,1")
+                    raise TrainError(f"前状态有误,期望running(4),实际为{updateTrain[i].status}")
+                # 处理乘客下车
                 if self.passenger_manager:
                     self.passenger_manager.process_passenger_alighting(updateTrain[i])
-                dt = updateTrain[i].setAlighting(updateTrain[i].nextStationTarget)
+                dt = updateTrain[i].setAlighting(updateTrain[i].line.nextStation(updateTrain[i]))
                 self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
+                continue
+
             elif updateStatus[i] == 2:  # 上客
+                # 如果是从 shunting 转来，先恢复 stationNow
+                if updateTrain[i].status == 5 and updateTrain[i]._shunting_arrival_station:
+                    updateTrain[i].stationNow = updateTrain[i]._shunting_arrival_station
+                    updateTrain[i]._shunting_arrival_station = None
+
+                # 处理乘客上车
+                if self.passenger_manager is None:
+                    raise TrainError("passengermanager is None")
+                else:
+                    self.passenger_manager.process_passenger_boarding(updateTrain[i])
+
                 if updateTrain[i].waitShunting:
-                    dt = updateTrain[i].setShunting(updateTrain[i].shuntingTargetLine)
-                    self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
-                elif updateTrain[i].stationNow is None and updateTrain[i].shuntingTargetStation:
-                    # shunting 完成后在新线路上线
+                    # 收到调车指令
+                    originLine = updateTrain[i].line
+                    target_line = updateTrain[i].shuntingTargetLine
                     target_station = updateTrain[i].shuntingTargetStation
-                    target_line = updateTrain[i].line
-                    dt = updateTrain[i].setBoarding(target_station)
-                    target_line.addNewTrainToLine(updateTrain[i], target_station, True)
+                    target_direction = updateTrain[i].shuntingTargetDirection
+                    # 强制乘客下车
                     if self.passenger_manager:
-                        self.passenger_manager.process_passenger_boarding(updateTrain[i])
-                    updateTrain[i].shuntingTargetStation = None
+                        self.passenger_manager.force_alight_all(updateTrain[i], target_station or updateTrain[i].stationNow)
+                    # setShunting 在 removeTrainFromLine 之前调，因为需要 self.line 计算调车时间
+                    dt = updateTrain[i].setShunting(target_line, arrival_station=target_station)
+                    originLine.removeTrainFromLine(updateTrain[i])
+                    target_line.addNewTrainToLine(updateTrain[i], target_station, target_direction)
                     self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
+                    continue
                 else:
-                    if self.passenger_manager is None:
-                        sys.exit("passengermanager is None")
-                    else:
-                        self.passenger_manager.process_passenger_boarding(updateTrain[i])
-                    current_station = updateTrain[i].stationNow
-                    dt = updateTrain[i].setBoarding(current_station)
+                    # 开始上客
+                    next_station = updateTrain[i].stationNow
+                    dt = updateTrain[i].setBoarding(next_station)
                     self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
-            elif updateStatus[i] == 3:  # 等待
-                if updateTrain[i].line and updateTrain[i].line.nextStation(updateTrain[i]):
-                    dt = updateTrain[i].setBoarding(updateTrain[i].line.nextStation(updateTrain[i]))
+                    continue
+
+            elif updateStatus[i] == 3:  # 等待/idle
+                # idle 状态结束后，检查列车是否有线路和站点
+                tr = updateTrain[i]
+                if tr.line and tr.stationNow:
+                    # 有线路且有站点，尝试重新上客
+                    next_station = tr.line.nextStation(tr)
+                    dt = tr.setBoarding(next_station)
+                    self.trainTimer.register(dt, tr, tr.nextStatus)
                 else:
-                    dt = updateTrain[i].setIdle()
-                self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
+                    # 没有线路或没有站点，继续空闲
+                    dt = tr.setIdle()
+                    self.trainTimer.register(dt, tr, tr.nextStatus)
+                continue
+
             elif updateStatus[i] == 4:  # running
+                if updateTrain[i].waitShunting:
+                    # 列车正在运行但收到调车指令，等到达下一站后再调车
+                    # 正常落客，在落客完成后（状态2）检查waitShunting
+                    pass
                 dt = updateTrain[i].setRunning(updateTrain[i].line.nextStation(updateTrain[i]))
                 self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
+                continue
+
             else:
-                sys.exit("error nextstatus")
+                raise TrainError(f"未知的nextStatus: {updateStatus[i]}")
+
+    def printInformation(self):
+        print("车库信息->")
+        print("车头数量", self.trainNm)
+        for i in range(0, len(self.trainBusyList)):
+            print(self.trainBusyList[i])
+
+        # 打印乘客信息
+        if self.passenger_manager:
+            print("乘客信息->")
+            print("总乘客数量:", len(self.passenger_manager.passenger_list))
+            for passenger in self.passenger_manager.passenger_list:
+                print(f"乘客{passenger.passenger_id}: {passenger.status} 在站点{passenger.current_station} 等待时间:{passenger.waiting_time}")
+        print("<-车库信息")

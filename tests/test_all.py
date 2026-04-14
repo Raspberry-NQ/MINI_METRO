@@ -1,6 +1,8 @@
 # test_all.py — 综合测试 MINI METRO 所有模块
 
 import types, sys, traceback
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # ============================================================
 # 缺失依赖 stub
@@ -57,7 +59,9 @@ def make_line(number, n_stations):
     return line, stations
 
 class MetroStub:
-    pass
+    def __init__(self):
+        self.metroLine = []
+        self.stations = []
 
 # 正确的状态循环: idle(3) -> boarding(2) -> running(4) -> alighting(1) -> boarding(2) -> ...
 def train_move_to_station(t, line, target_station):
@@ -152,8 +156,8 @@ def t():
     tr = train(1); tr.status = 4
     try:
         tr.setBoarding(s); assert False
-    except SystemExit:
-        pass
+    except Exception as e:
+        assert "状态不对" in str(e)
 test("train running->boarding 应报错", t)
 
 def t():
@@ -168,8 +172,8 @@ def t():
     tr = train(1)
     try:
         tr.setRunning(s); assert False
-    except SystemExit:
-        pass
+    except Exception as e:
+        assert "状态不对" in str(e)
 test("train 非boarding->running 应报错", t)
 
 def t():
@@ -185,8 +189,8 @@ def t():
     tr = train(1)
     try:
         tr.setAlighting(s); assert False
-    except SystemExit:
-        pass
+    except Exception as e:
+        assert "状态不对" in str(e)
 test("train 非running->alighting 应报错", t)
 
 def t():
@@ -206,8 +210,8 @@ def t():
     tr = train(1); tr.waitShunting = False
     try:
         tr.setShunting(None); assert False
-    except SystemExit:
-        pass
+    except Exception as e:
+        assert "waitShunting" in str(e)
 test("train setShunting 无标志应报错", t)
 
 def t():
@@ -413,26 +417,21 @@ def t():
 test("Passenger alight_train 到达终点", t)
 
 def t():
-    """BUG: Passenger 缺少 update_waiting_time 方法"""
+    """已修复: Passenger.update_waiting_time 方法存在且正常工作"""
     s1, s2 = station(1,"c",0,0), station(2,"t",100,0)
     p = Passenger(1, s1, s2)
-    try:
-        p.update_waiting_time()
-    except AttributeError as e:
-        print(f"    -> BUG: {e}")
-        raise
-test("[BUG] Passenger 缺少 update_waiting_time 方法", t)
+    p.update_waiting_time()
+    assert p.waiting_time == 1
+test("Passenger update_waiting_time 已修复", t)
 
 def t():
-    """BUG: Passenger 缺少 is_impatient 方法"""
+    """已修复: Passenger.is_impatient 方法存在且正常工作"""
     s1, s2 = station(1,"c",0,0), station(2,"t",100,0)
     p = Passenger(1, s1, s2)
-    try:
-        p.is_impatient()
-    except AttributeError as e:
-        print(f"    -> BUG: {e}")
-        raise
-test("[BUG] Passenger 缺少 is_impatient 方法", t)
+    assert p.is_impatient() == False
+    p.waiting_time = 200
+    assert p.is_impatient() == True
+test("Passenger is_impatient 已修复", t)
 
 # ============================================================
 # 6. PassengerManager
@@ -461,8 +460,7 @@ def t():
 test("PassengerManager generate 有路径", t)
 
 def t():
-    """BUG: 无车厢时, board_train 成功(状态变on_train), 乘客从车站移除,
-       但 carriageList 为空不执行车厢添加, 乘客丢失!"""
+    """已修复: 无车厢时, 乘客不会被允许上车，留在车站等待"""
     pm = PassengerManager(MetroStub())
     l, (s1, s2) = make_line(1, 2)
     tr = train(1); tr.setBoarding(s1); l.addNewTrainToLine(tr, s1, True)
@@ -471,16 +469,13 @@ def t():
     p._update_current_target()
     s1.passenger_list.append(p); s1.passengerNm = 1
     result = pm.process_passenger_boarding(tr)
-    in_carriage = any(p in c.passenger_list for c in tr.carriageList)
-    lost = p.status == "on_train" and not in_carriage and p not in s1.passenger_list
-    print(f"    -> status={p.status}, in_carriage={in_carriage}, in_station={p in s1.passenger_list}")
-    if lost:
-        raise Exception(f"乘客丢失! status=on_train 但不在车厢也不在车站")
+    # 无车厢时，乘客不会上车，留在车站
+    assert p.status == "waiting"
+    assert p in s1.passenger_list
 test("[BUG] PassengerManager boarding 无车厢时乘客丢失", t)
 
 def t():
-    """BUG: 车厢满员时, board_train 成功 + 乘客从车站移除,
-       但车厢拒绝, 乘客消失!"""
+    """已修复: 车厢满员时, 乘客不会被允许上车，留在车站等待"""
     pm = PassengerManager(MetroStub())
     l, (s1, s2) = make_line(1, 2)
     tr = train(1); c = carriage(1); tr.connectCarriage(c)
@@ -493,15 +488,13 @@ def t():
     p._update_current_target()
     s1.passenger_list.append(p); s1.passengerNm = 1
     result = pm.process_passenger_boarding(tr)
-    in_carriage = p in c.passenger_list
-    lost = p.status == "on_train" and not in_carriage and p not in s1.passenger_list
-    print(f"    -> status={p.status}, in_carriage={in_carriage}, in_station={p in s1.passenger_list}")
-    if lost:
-        raise Exception(f"满员时乘客丢失!")
+    # 满员时，乘客不会上车，留在车站
+    assert p.status == "waiting"
+    assert p in s1.passenger_list
 test("[BUG] PassengerManager boarding 满员时乘客丢失", t)
 
 def t():
-    """BUG: process_passenger_alighting 调用 passenger.alight_train 但该方法不存在"""
+    """已修复: process_passenger_alighting 调用 passenger.alight_train 正常工作"""
     pm = PassengerManager(MetroStub())
     l, (s1, s2) = make_line(1, 2)
     tr = train(1); c = carriage(1); tr.connectCarriage(c)
@@ -509,13 +502,11 @@ def t():
     tr.setRunning(s2); tr.setAlighting(s2)
     p = Passenger(1, s1, s2); p.status = "on_train"
     p.planned_route = [{'line':l,'direction':True,'transfer':False}]
+    p.current_route_index = 0
     c.passenger_list.append(p); c.currentNum = 1
-    try:
-        pm.process_passenger_alighting(tr)
-    except AttributeError as e:
-        print(f"    -> BUG: {e}")
-        raise
-test("[BUG] PassengerManager alighting 调用不存在的方法", t)
+    alighted = pm.process_passenger_alighting(tr)
+    assert len(alighted) == 1
+test("PassengerManager alighting 已修复", t)
 
 # ============================================================
 # 7. TrainInventory
@@ -541,16 +532,16 @@ def t():
     ti = TrainInventory()
     try:
         ti.getFreeTrain(); assert False
-    except SystemExit:
-        pass
+    except Exception as e:
+        assert "火车余额不足" in str(e)
 test("TrainInventory getFreeTrain 空列表报错", t)
 
 def t():
     ti = TrainInventory()
     try:
         ti.getFreeCarriage(); assert False
-    except SystemExit:
-        pass
+    except Exception as e:
+        assert "车厢余额不足" in str(e)
 test("TrainInventory getFreeCarriage 空列表报错", t)
 
 def t():
@@ -583,11 +574,14 @@ def t():
 test("TrainInventory updateAllTrain 空", t)
 
 def t():
-    """BUG: getFreeTrain/getFreeCarriage 资源不足时 sys.exit 而非抛异常"""
+    """已修复: getFreeTrain/getFreeCarriage 资源不足时抛 ResourceError"""
     ti = TrainInventory()
-    # sys.exit 是致命退出, 调用方无法捕获和恢复
-    print(f"    -> 资源不足时使用 sys.exit, 无法优雅处理")
-test("[BUG] TrainInventory 资源不足用 sys.exit 而非异常", t)
+    try:
+        ti.getFreeTrain()
+        assert False
+    except Exception as e:
+        assert "ResourceError" in type(e).__name__ or "余额不足" in str(e)
+test("TrainInventory 资源不足抛异常", t)
 
 # ============================================================
 # 8. 集成测试
@@ -654,11 +648,13 @@ def t():
     class FakeMetro:
         def __init__(self):
             self.metroLine = []
+            self.stations = []
     metro = FakeMetro()
     s1 = station(1, "circle", 0, 0)
     s2 = station(2, "triangle", 300, 0)
     l = MetroLine(1, [s1, s2])
     metro.metroLine.append(l)
+    metro.stations = [s1, s2]
 
     pm = PassengerManager(metro)
     ti = TrainInventory(pm)

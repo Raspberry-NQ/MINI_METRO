@@ -1,3 +1,59 @@
+# MINI METRO
+
+一个简单的地铁模拟游戏
+
+## 项目结构
+
+- 根目录: 包含所有游戏核心模块的源代码文件
+- `tests/` 目录: 包含所有测试文件
+
+## 文件说明
+
+### 核心游戏模块
+
+- `main.py` - 游戏入口点，初始化一个小的世界进行演示
+- `run.py` - 完整的游戏运行器，设置两条线路和多列车的复杂世界
+- `world.py` - 游戏世界类，管理站点、线路和整体游戏状态
+- `station.py` - 站点类，表示地铁站的信息和状态
+- `train.py` - 列车类，管理列车状态、车厢和运行逻辑
+- `carriage.py` - 车厢类，表示载客的车厢
+- `line.py` - 线路类，管理地铁线路和站点关系
+- `passenger.py` - 乘客类，管理乘客状态、路径规划和行为
+- `passengerManager.py` - 乘客管理器，负责生成乘客和处理上下车逻辑
+- `trainInventory.py` - 列车库存管理器，管理所有列车和车厢资源
+- `route_planner.py` - 路径规划器，为乘客计算最优路径
+- `timer_scheduler.py` - 定时调度器，管理列车状态转换的定时事件
+- `external_functions.py` - 外部函数模块，包含各种时间计算函数
+
+### 测试文件
+
+- `tests/test_all.py` - 综合测试所有模块功能
+- `tests/test_shunt.py` - 专门测试调车功能
+
+## 用户操作指南
+
+### 运行游戏
+
+1. 运行简单演示世界：
+   ```bash
+   python main.py
+   ```
+
+2. 运行完整游戏：
+   ```bash
+   python run.py
+   ```
+
+### 运行测试
+
+```bash
+# 运行所有测试
+python tests/test_all.py
+python tests/test_shunt.py
+```
+
+## 游戏更新机制
+
 按游戏刻来更新.
 
 每一刻需要更新的有:

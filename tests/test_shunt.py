@@ -1,5 +1,7 @@
 # test_shunt.py — 测试调车功能
 import sys, types, traceback
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # stub external_functions
 ef = types.ModuleType('external_functions')
@@ -116,23 +118,23 @@ def t():
 test("employTrain 调两辆到不同线路", t)
 
 def t():
-    """车库无车时 getFreeTrain 崩溃"""
+    """车库无车时 getFreeTrain 抛出 ResourceError"""
     ti, pm, l1, l2, _ = make_system()
     try:
         ti.getFreeTrain()
         assert False
-    except SystemExit:
-        pass
+    except Exception as e:
+        assert "火车余额不足" in str(e)
 test("车库无车时 getFreeTrain 报错", t)
 
 def t():
-    """车库无车厢时 getFreeCarriage 崩溃"""
+    """车库无车厢时 getFreeCarriage 抛出 ResourceError"""
     ti, pm, l1, l2, _ = make_system()
     try:
         ti.getFreeCarriage()
         assert False
-    except SystemExit:
-        pass
+    except Exception as e:
+        assert "车厢余额不足" in str(e)
 test("车库无车厢时 getFreeCarriage 报错", t)
 
 def t():
@@ -187,7 +189,7 @@ def t():
 test("shuntTrain 从 line1 调到 line2", t)
 
 def t():
-    """调车后列车在 line2 上正常运行"""
+    """调车后 shunting 完成时，line2.nextStation 返回正确方向"""
     ti, pm, l1, l2, (sA, sB, sC, sD, sE, sF) = make_system()
     ti.addTrain(); ti.addCarriage()
     ti.employTrain(l1, sA)
@@ -197,10 +199,21 @@ def t():
     tr.setRunning(sB); tr.setAlighting(sB)
     tr.setBoarding(sB); tr.setRunning(sC); tr.setAlighting(sC)
 
+    # 清空 timer
+    ti.trainTimer.events.clear()
+
     # 调到 line2, 反向
     ti.shuntTrain(tr, l2, False, sC)
 
-    # 现在 train 在 sC, line2, direction=False
+    # shuntTrain 走 setShunting 流程，status=5, stationNow=None
+    assert tr.status == 5
+    assert tr.stationNow is None
+
+    # 模拟 shunting 完成：手动推进到 boarding 状态
+    # 先设 stationNow 为目标站（模拟 updateAllTrain 中状态2的处理）
+    tr.stationNow = sC
+    tr.status = 2  # boarding
+
     # line2: [sE(0), sC(1), sF(2)]
     # direction=False 意味着 sC -> sE
     ns = l2.nextStation(tr)
@@ -209,7 +222,7 @@ def t():
 test("调车后 line2.nextStation 正确", t)
 
 def t():
-    """调车后列车可以继续循环运行"""
+    """调车后列车可以继续循环运行（shunting 完成后）"""
     ti, pm, l1, l2, (sA, sB, sC, sD, sE, sF) = make_system()
     ti.addTrain(); ti.addCarriage()
     ti.employTrain(l1, sA)
@@ -219,9 +232,18 @@ def t():
     tr.setRunning(sB); tr.setAlighting(sB)
     tr.setBoarding(sB); tr.setRunning(sC); tr.setAlighting(sC)
 
-    # 调到 line2 (shuntTrainToLine 内部调 setBoarding, status=2)
+    # 清空 timer
+    ti.trainTimer.events.clear()
+
+    # 调到 line2, 正向
     ti.shuntTrain(tr, l2, True, sC)
-    assert tr.status == 2  # boarding, 由 shuntTrainToLine 设置
+
+    # shuntTrain 走 setShunting 流程，status=5, stationNow=None
+    assert tr.status == 5  # shunting
+
+    # 手动推进：shunting 完成后恢复到 boarding
+    tr.stationNow = sC
+    tr.status = 2  # boarding
 
     # sC boarding -> running to sF (正向)
     ns = l2.nextStation(tr)
@@ -234,7 +256,8 @@ def t():
     assert ns == sC
     tr.setRunning(sC); tr.setAlighting(sC)
 
-    # sC -> sE (反向)
+    # sC -> sD...but we're on line2, direction now reversed
+    # line2: [sE(0), sC(1), sF(2)], reversed from sC means sC -> sE
     tr.setBoarding(sC)
     ns = l2.nextStation(tr)
     assert ns == sE
@@ -334,17 +357,19 @@ def t():
 test("updateAllTrain 中 waitShunting 分支", t)
 
 def t():
-    """shuntTrainToLine 现在设置 train.line"""
+    """通过 TrainInventory.shuntTrain 调车，train.line 正确设为目标线路"""
     ti, pm, l1, l2, (sA, sB, sC, sD, sE, sF) = make_system()
     ti.addTrain(); ti.addCarriage()
     ti.employTrain(l1, sA)
     tr = ti.trainBusyList[0]
 
-    l1.removeTrainFromLine(tr)
-    assert tr.line is None
+    # 推到 sC，状态为 alighting
+    tr.setRunning(sB); tr.setAlighting(sB)
+    tr.setBoarding(sB); tr.setRunning(sC); tr.setAlighting(sC)
 
-    stime = l2.shuntTrainToLine(tr, True, sC)
-    assert tr.line == l2  # shuntTrainToLine 已修复
+    # 通过 shuntTrain 调到 line2
+    ti.shuntTrain(tr, l2, True, sC)
+    assert tr.line == l2
 test("shuntTrainToLine 设置 train.line", t)
 
 def t():
@@ -472,10 +497,11 @@ def t():
     tr.setRunning(sB); tr.setAlighting(sB)
     tr.setBoarding(sB); tr.setRunning(sC); tr.setAlighting(sC)
 
-    # 设置调车标志 + 目标站
+    # 设置调车标志 + 目标站 + 方向
     tr.waitShunting = True
     tr.shuntingTargetLine = l2
     tr.shuntingTargetStation = sC
+    tr.shuntingTargetDirection = True
 
     # 注册 nextStatus=2 事件（模拟 alighting 完成后）
     ti.trainTimer.register(1, tr, 2)
@@ -502,16 +528,16 @@ print("\n=== 6. setShunting 中 self.line 访问问题 ===")
 # ================================================================
 
 def t():
-    """setShunting line=None 时不会崩溃 (因为有 if origin_line 保护)，
+    """setShunting line=None 时不会崩溃（countTrainShuntingime 处理了 None），
        但从车库调车应该用 employTrain"""
     tr = train(1)
     tr.waitShunting = True
     l2 = MetroLine(2, [station(1,"c",0,0)])
     dt = tr.setShunting(l2)
-    assert tr.status == 5 and tr.line == l2
-    # 但 tr 不在 l2.trainDirection 中
-    assert tr not in l2.trainDirection
-    print(f"    -> setShunting line=None 可用但不加 trainDirection, 应使用 employTrain")
+    assert tr.status == 5
+    # setShunting 不改变 self.line，line 通过 addNewTrainToLine 设置
+    assert tr.line is None
+    print(f"    -> setShunting line=None 可用但不设 train.line, 应使用 employTrain")
 test("setShunting line=None 可用但不完善", t)
 
 def t():
