@@ -2,10 +2,10 @@
 
 
 class carriage:
-    def __init__(self, number):
+    def __init__(self, number, capacity=6):
         self.number = number
         self.line = 0
-        self.capacity = 6  # 车厢容量,默认为6
+        self.capacity = capacity  # 车厢容量,默认为6
         self.currentNum = 0  # 当前人数
         self.passenger_list = []  # 存储车厢内的乘客对象
 

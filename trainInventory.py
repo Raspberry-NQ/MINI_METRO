@@ -13,7 +13,7 @@ class ResourceError(Exception):
 class TrainInventory:
     """记录所有火车和车厢信息。train代表动力不载人车头,carriage代表无动力载人车厢"""
 
-    def __init__(self, passenger_manager=None):
+    def __init__(self, passenger_manager=None, config=None):
         self.trainNm = 0
         self.carriageNm = 0
 
@@ -24,15 +24,17 @@ class TrainInventory:
 
         self.trainTimer = TimerScheduler()
         self.passenger_manager = passenger_manager
+        self.config = config
 
     def addTrain(self):
         self.trainNm += 1
-        newTrain = train(self.trainNm)
+        newTrain = train(self.trainNm, self.config)
         self.trainAbleList.append(newTrain)
 
     def addCarriage(self):
         self.carriageNm += 1
-        newCarr = carriage(self.carriageNm)
+        cap = self.config.carriage_capacity if self.config else 6
+        newCarr = carriage(self.carriageNm, cap)
         self.carriageAbleList.append(newCarr)
 
     def getFreeTrain(self):

@@ -6,9 +6,10 @@ from external_functions import countTrainRunningTime
 
 
 class RoutePlanner:
-    def __init__(self, metro_system):
+    def __init__(self, metro_system, config=None):
         self.metro_system = metro_system
-        self.transfer_penalty = 5  # 换乘惩罚时间
+        self.config = config
+        self.transfer_penalty = config.passenger_transfer_penalty if config else 5  # 换乘惩罚时间
         self.route_cache = {}  # 路径缓存
 
     def invalidate_cache(self):
@@ -89,7 +90,7 @@ class RoutePlanner:
 
     def _calculate_travel_time(self, station1, station2):
         """计算两站之间的行驶时间"""
-        return countTrainRunningTime(station1, station2)
+        return countTrainRunningTime(station1, station2, self.config)
 
     def _dijkstra_fastest(self, graph, start, end):
         """Dijkstra算法 - 寻找最快路径"""
@@ -107,10 +108,11 @@ class RoutePlanner:
         """通用Dijkstra算法实现"""
         distances = {start: 0}
         previous = {}
-        pq = [(0, start)]
+        pq = [(0, 0, start)]  # (dist, seq, station) — seq 打破平局
+        _seq = 0
 
         while pq:
-            current_dist, current = heapq.heappop(pq)
+            current_dist, _, current = heapq.heappop(pq)
 
             if current == end:
                 break
@@ -126,7 +128,8 @@ class RoutePlanner:
                 if new_dist < distances.get(neighbor, float('inf')):
                     distances[neighbor] = new_dist
                     previous[neighbor] = (current, edge)
-                    heapq.heappush(pq, (new_dist, neighbor))
+                    _seq += 1
+                    heapq.heappush(pq, (new_dist, _seq, neighbor))
 
         # 重构路径
         if end not in previous:

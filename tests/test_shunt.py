@@ -5,11 +5,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # stub external_functions
 ef = types.ModuleType('external_functions')
-ef.countTrainAlightingTime = lambda t=1: 2
-ef.countTrainBoardingTime = lambda s=1: 3
-ef.countTrainRunningTime = lambda a, b: 5
-ef.countTrainIdleTime = lambda: 1
-ef.countTrainShuntingime = lambda l, n: 4
+ef.countTrainAlightingTime = lambda t, config=None: 2
+ef.countTrainBoardingTime = lambda s, config=None: 3
+ef.countTrainRunningTime = lambda a, b, config=None: 5
+ef.countTrainIdleTime = lambda config=None: 1
+ef.countTrainShuntingime = lambda l, n, config=None: 4
 sys.modules['external_functions'] = ef
 
 ts = types.ModuleType('timer_scheduler')
@@ -36,7 +36,7 @@ sys.modules['timer_scheduler'] = ts
 
 rp = types.ModuleType('route_planner')
 class RPStub:
-    def __init__(self, ms=None): pass
+    def __init__(self, ms=None, config=None): pass
     def find_route(self, o, d, p="f"): return None
 rp.RoutePlanner = RPStub
 sys.modules['route_planner'] = rp

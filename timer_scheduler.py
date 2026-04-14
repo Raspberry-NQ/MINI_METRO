@@ -5,8 +5,9 @@ import heapq
 
 class TimerScheduler:
     def __init__(self):
-        self.events = []  # 最小堆: (trigger_time, train_id, action)
+        self.events = []  # 最小堆: (trigger_time, seq, train, action)
         self.current_time = 0  # 游戏时间(秒)
+        self._seq = 0  # 序列号，打破时间相同时的比较
 
     def register(self, delay, train, nextStatus):
         """注册定时事件
@@ -15,7 +16,8 @@ class TimerScheduler:
         nextStatus: 触发后应进入的状态
         """
         trigger_time = self.current_time + delay
-        heapq.heappush(self.events, (trigger_time, train, nextStatus))
+        self._seq += 1
+        heapq.heappush(self.events, (trigger_time, self._seq, train, nextStatus))
 
     def update(self, dt):
         """更新所有定时事件
@@ -25,7 +27,8 @@ class TimerScheduler:
         updateStatus = []
         self.current_time += dt
         while self.events and self.events[0][0] <= self.current_time:
-            _, trainout, nextStatus = heapq.heappop(self.events)
+            _, trainout, nextStatus = self.events[0][1:]  # 跳过 seq
+            heapq.heappop(self.events)
             updateTrain.append(trainout)
             updateStatus.append(nextStatus)
         print("需要更新的火车有", len(updateTrain), "个")
@@ -36,5 +39,5 @@ class TimerScheduler:
         print("定时表START")
         print("时间:", self.current_time)
         for i in self.events:
-            print(i[1], i[0], i[2])
+            print(i[2], i[0], i[3])  # train, trigger_time, nextStatus
         print("定时表END")

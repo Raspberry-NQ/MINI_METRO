@@ -24,8 +24,9 @@ trainStatusList = {
 
 
 class train:
-    def __init__(self, number):
+    def __init__(self, number, config=None):
         self.number = number
+        self.config = config
         self.line = None  # None代表未放置
         self.carriageList = []
 
@@ -42,18 +43,13 @@ class train:
         self._shunting_arrival_station = None  # shunting完成后到达的站
 
     def __str__(self):
-        if self.stationNow:
-            return (f"<TRAIN/ID:{self.number}/{trainStatusList[self.status]}"
-                    f"/LINE[{self.line.number if self.line else None}]"
-                    f"/station ID:{self.stationNow.id}"
-                    f"/carriageNum:{len(self.carriageList)}"
-                    f"/time:{self.nextStatusTime}/>")
-        else:
-            return (f"<TRAIN/ID:{self.number}/{trainStatusList[self.status]}"
-                    f"/LINE[{self.line.number if self.line else None}]"
-                    f"/station ID:None"
-                    f"/carriageNum:{len(self.carriageList)}"
-                    f"/time:{self.nextStatusTime}/>")
+        line_str = str(self.line.number) if self.line else "None"
+        station_str = str(self.stationNow.id) if self.stationNow else "None"
+        return (f"<TRAIN/ID:{self.number}/{trainStatusList[self.status]}"
+                f"/LINE[{line_str}]"
+                f"/station ID:{station_str}"
+                f"/carriageNum:{len(self.carriageList)}"
+                f"/time:{self.nextStatusTime}/>")
 
     def connectCarriage(self, carriage):
         self.carriageList.append(carriage)
@@ -75,7 +71,7 @@ class train:
             raise TrainError(f"落客前状态不对,期望running(4),实际为{self.status}({trainStatusList[self.status]})")
         self.status = 1
         self.stationNow = station
-        self.nextStatusTime = countTrainAlightingTime(self)
+        self.nextStatusTime = countTrainAlightingTime(self, self.config)
         self.nextStatus = 2  # 下一个状态一般是2
         return self.nextStatusTime
 
@@ -84,7 +80,7 @@ class train:
             raise TrainError(f"上客前状态不对,期望alighting/idle/shunting,实际为{self.status}({trainStatusList[self.status]})")
         self.status = 2
         self.stationNow = station
-        self.nextStatusTime = countTrainBoardingTime(station)
+        self.nextStatusTime = countTrainBoardingTime(station, self.config)
         self.nextStatus = 4  # 下一个状态是4（运行）
         return self.nextStatusTime
 
@@ -92,7 +88,7 @@ class train:
         print("TRAIN ", self.number, "移入车库待命")
         self.status = 3
         self.stationNow = None
-        self.nextStatusTime = countTrainIdleTime()
+        self.nextStatusTime = countTrainIdleTime(self.config)
         self.nextStatus = 3  # 下一个状态一般是3
         return self.nextStatusTime
 
@@ -101,7 +97,7 @@ class train:
             raise TrainError(f"出站前状态不对,期望boarding(2),实际为{self.status}({trainStatusList[self.status]})")
         self.status = 4
         # 不修改当前station,直到落客才修改
-        self.nextStatusTime = countTrainRunningTime(self.stationNow, nextStation)
+        self.nextStatusTime = countTrainRunningTime(self.stationNow, nextStation, self.config)
         self.nextStatus = 1  # 下一个状态一般是1
         return self.nextStatusTime
 
@@ -116,7 +112,7 @@ class train:
         self.shuntingTargetDirection = None
         self.status = 5
         self.stationNow = None
-        self.nextStatusTime = countTrainShuntingime(self.line, nextLine)
+        self.nextStatusTime = countTrainShuntingime(self.line, nextLine, self.config)
         self.nextStatus = 2  # 下一个状态一般是到站直接上客,无需等待落客
         return self.nextStatusTime
 

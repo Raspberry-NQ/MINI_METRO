@@ -8,11 +8,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 # 缺失依赖 stub
 # ============================================================
 ef = types.ModuleType('external_functions')
-ef.countTrainAlightingTime = lambda train=1: 2
-ef.countTrainBoardingTime = lambda station=1: 3
-ef.countTrainRunningTime = lambda s1, s2: 5
-ef.countTrainIdleTime = lambda: 1
-ef.countTrainShuntingime = lambda line, nextLine: 4
+ef.countTrainAlightingTime = lambda train, config=None: 2
+ef.countTrainBoardingTime = lambda station, config=None: 3
+ef.countTrainRunningTime = lambda s1, s2, config=None: 5
+ef.countTrainIdleTime = lambda config=None: 1
+ef.countTrainShuntingime = lambda line, nextLine, config=None: 4
 sys.modules['external_functions'] = ef
 
 ts = types.ModuleType('timer_scheduler')
@@ -350,10 +350,10 @@ def t():
 test("MetroLine 移除不在线路上的 train (静默)", t)
 
 def t():
-    """BUG: station.connections 未被 MetroLine 更新"""
+    """已修复: MetroLine 初始化时更新 station.connections"""
     l, (s1, s2) = make_line(1, 2)
-    assert s1.connections == [] and s2.connections == []
-test("[BUG] station.connections 未被线路更新", t)
+    assert s2 in s1.connections and s1 in s2.connections
+test("MetroLine 初始化时更新 station.connections", t)
 
 # ============================================================
 # 5. Passenger

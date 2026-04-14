@@ -2,14 +2,14 @@
 
 
 class Passenger:
-    def __init__(self, passenger_id, origin_station, destination_station, preference="fastest"):
+    def __init__(self, passenger_id, origin_station, destination_station, preference="fastest", patience=100):
         self.passenger_id = passenger_id
         self.origin_station = origin_station
         self.destination_station = destination_station
         self.current_station = origin_station
         self.waiting_time = 0
         self.status = "waiting"  # waiting, boarding, on_train, transferring, arrived
-        self.patience = 100
+        self.patience = patience
         self.preference = preference  # 路径偏好
 
         # 路径相关

@@ -5,16 +5,18 @@ from route_planner import RoutePlanner
 
 
 class PassengerManager:
-    def __init__(self, metro_system):
+    def __init__(self, metro_system, config=None):
         self.passenger_list = []
         self.passenger_id_counter = 0
-        self.route_planner = RoutePlanner(metro_system)
+        self.route_planner = RoutePlanner(metro_system, config)
         self.metro_system = metro_system
+        self.config = config
 
     def generate_passenger(self, origin, destination, preference="fastest"):
         """生成新乘客并规划路径"""
         self.passenger_id_counter += 1
-        passenger = Passenger(self.passenger_id_counter, origin, destination, preference)
+        patience = self.config.passenger_default_patience if self.config else 100
+        passenger = Passenger(self.passenger_id_counter, origin, destination, preference, patience)
         passenger.plan_route(self.route_planner)
 
         if passenger.planned_route:
