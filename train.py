@@ -20,6 +20,7 @@ trainStatusList = {
     3: "idle",                # 空闲中
     4: "running",             # 前往下一站中
     5: "shunting",            # 调车冷却中
+    6: "waiting",             # 等待前方车站空闲
 }
 
 
@@ -41,6 +42,8 @@ class train:
         self.shuntingTargetStation = None  # 调车目标站点
         self.shuntingTargetDirection = None  # 调车目标方向
         self._shunting_arrival_station = None  # shunting完成后到达的站
+        self._waiting_for_station = None  # 等待时记录目标站（用于重试时传入）
+        self._waiting_before_departure = True  # True=等待出发(等前方空闲后setRunning), False=等待进站(等前方空闲后setAlighting)
 
     def __str__(self):
         line_str = str(self.line.number) if self.line else "None"
@@ -99,6 +102,25 @@ class train:
         # 不修改当前station,直到落客才修改
         self.nextStatusTime = countTrainRunningTime(self.stationNow, nextStation, self.config)
         self.nextStatus = 1  # 下一个状态一般是1
+        return self.nextStatusTime
+
+    def setWaiting(self, nextStation, config=None, before_departure=True):
+        """前方站被占用，进入等待状态。等待结束后重新检查是否可以出发。
+
+        Args:
+            nextStation: 等待的目标站
+            config: GameConfig
+            before_departure: True=出发前等待(等空闲后setRunning),
+                              False=到达站外等待(等空闲后setAlighting)
+        """
+        if self.status != 2:
+            raise TrainError(f"等待前状态不对,期望boarding(2),实际为{self.status}({trainStatusList[self.status]})")
+        self.status = 6
+        self._waiting_for_station = nextStation
+        self._waiting_before_departure = before_departure
+        wait_time = config.train_wait_time if config and hasattr(config, 'train_wait_time') else 3
+        self.nextStatusTime = wait_time
+        self.nextStatus = 2  # 等待结束后回到状态2重新检查
         return self.nextStatusTime
 
     def setShunting(self, nextLine, arrival_station=None):

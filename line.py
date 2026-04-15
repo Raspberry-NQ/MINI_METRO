@@ -132,6 +132,64 @@ class MetroLine:
             else:
                 return self.stationList[p - 1]
 
+    def isNextStationBlocked(self, train):
+        """检查列车的下一站是否被同方向的其他列车占用
+
+        规则:
+        - 同方向列车不能同时处于同一非终点站
+        - 终点站（两端的站）允许对向列车同时存在
+        - "被占用"指另一列车在该站且处于 boarding/alighting/waiting 状态（已停站）
+        - running 状态的列车 stationNow 还是出发站，不算占用出发站
+
+        Returns:
+            True = 被占用, 不能出发
+            False = 可以出发
+        """
+        if train not in self.trainDirection:
+            return False
+
+        next_station = self.nextStation(train)
+        if next_station is None:
+            return False
+
+        # 检查下一站是否为终点站
+        is_terminal = (next_station == self.stationList[0] or
+                       next_station == self.stationList[-1])
+
+        my_direction = self.trainDirection[train]
+
+        for other_train, other_direction in self.trainDirection.items():
+            if other_train is train:
+                continue
+
+            # running 状态的列车不算占用其出发站（stationNow 还是旧站）
+            if other_train.status == 4:
+                continue
+
+            # 同方向检查
+            if other_direction == my_direction:
+                # 另一列车就在下一站（已停站状态: boarding/alighting/waiting）
+                if other_train.stationNow is next_station:
+                    return True
+
+        # 终点站不阻止对向列车
+        if is_terminal:
+            return False
+
+        # 非终点站：对向列车也占用了该站
+        for other_train, other_direction in self.trainDirection.items():
+            if other_train is train:
+                continue
+            # running 状态不算占用
+            if other_train.status == 4:
+                continue
+            if other_direction != my_direction:
+                # 对向列车停在该站，也占用
+                if other_train.stationNow is next_station:
+                    return True
+
+        return False
+
     def isAtDestination(self, train):
         dire = self.trainDirection[train]
         if dire == True:

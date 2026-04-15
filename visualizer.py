@@ -5,6 +5,7 @@ import sys
 import math
 import io
 from external_functions import countTrainRunningTime
+from station import CATEGORY_LABEL_CN
 
 # 站点形状 → 绘制函数 映射
 SHAPE_DRAWERS = {}
@@ -196,6 +197,11 @@ class Visualizer:
         for s in self.world.stations:
             sx, sy = self.world_to_screen(s.x, s.y)
 
+            # 类别底色圆
+            cat_color = cfg.category_colors.get(s.category, (220, 220, 220))
+            if s.category:
+                pygame.draw.circle(self.screen, cat_color, (sx, sy), r + 6)
+
             # 拥堵闪烁 — 接近上限时背景变红
             crowd_ratio = s.passengerNm / limit
             if crowd_ratio >= 0.7:
@@ -224,8 +230,10 @@ class Visualizer:
             if s.passengerNm > 0:
                 self._draw_station_passengers(s, sx, sy, r)
 
-            # 站点 ID
-            id_surf = self.font_small.render(str(s.id), True, cfg.text_color)
+            # 站点 ID 和类别
+            cat_label = CATEGORY_LABEL_CN.get(s.category, "") if s.category else ""
+            label_text = f"{s.id}" if not cat_label else f"{s.id} {cat_label}"
+            id_surf = self.font_small.render(label_text, True, cfg.text_color)
             self.screen.blit(id_surf, (sx - id_surf.get_width() // 2, sy + r + 4))
 
     def _draw_station_passengers(self, station, sx, sy, r):
@@ -329,6 +337,9 @@ class Visualizer:
             iy = from_s.y + (to_s.y - from_s.y) * progress
             return self.world_to_screen(ix, iy)
 
+        if train.status == 6:  # waiting — 在当前站点等待前方空闲
+            return self.world_to_screen(train.stationNow.x, train.stationNow.y)
+
         # 其他状态 — 在当前站点
         return self.world_to_screen(train.stationNow.x, train.stationNow.y)
 
@@ -339,10 +350,18 @@ class Visualizer:
         state = self.world.getGameState()
         metrics = state["metrics"]
         avail = state["available"]
+        time_info = state.get("time_of_day", {})
 
         # 左上: 游戏指标
         y = 10
-        self._hud_text(f"Tick: {state['tick']}", 10, y); y += 22
+        period = time_info.get("period", "?")
+        period_cn = {
+            "night": "夜间", "morning_rush": "早高峰",
+            "morning": "上午", "midday": "午间",
+            "evening_rush": "晚高峰", "evening": "晚间",
+            "late_night": "深夜",
+        }.get(period, period)
+        self._hud_text(f"Tick: {state['tick']}  Day {state['tick'] // cfg.day_length + 1} {period_cn}", 10, y); y += 22
         self._hud_text(f"Speed: x{self.sim_speed}  {'(||)' if self.paused else '(>)'}", 10, y); y += 22
         self._hud_text(f"Stations: {len(state['stations'])}  Lines: {len(state['lines'])}  Trains: {len(state['trains'])}", 10, y); y += 22
 
@@ -358,6 +377,11 @@ class Visualizer:
             self._hud_text(f"!! {at_risk} station(s) at risk !!", 10, y, color=warn_color)
             y += 22
 
+        unconnected = metrics.get("unconnected_stations", 0)
+        if unconnected > 0:
+            self._hud_text(f"Unconnected: {unconnected}", 10, y, color=(180, 120, 40))
+            y += 22
+
         self._hud_text(f"Max queue: {metrics.get('max_station_passengers', 0)}/{cfg.overcrowd_limit}", 10, y); y += 22
         self._hud_text(f"Avg wait: {metrics.get('avg_waiting_time', 0)}", 10, y); y += 22
         self._hud_text(f"Arrived: {metrics.get('total_arrived', 0)}", 10, y); y += 22
@@ -369,6 +393,22 @@ class Visualizer:
         self._hud_text(f"  Trains: {avail['trains']}", rx, ry); ry += 22
         self._hud_text(f"  Carriages: {avail['carriages']}", rx, ry); ry += 22
         self._hud_text(f"  Lines: {avail['lines_remaining']}", rx, ry)
+
+        # 底部: 类别图例
+        legend_y = cfg.window_height - 55
+        legend_x = 10
+        for cat in cfg.all_categories:
+            cat_color = cfg.category_colors.get(cat, (200, 200, 200))
+            label = cfg.category_labels.get(cat, cat)
+            shape = cfg.category_shape_map.get(cat, "circle")
+            # 画背景色圆
+            pygame.draw.circle(self.screen, cat_color, (legend_x + 8, legend_y + 8), 8)
+            # 画形状
+            draw_shape(self.screen, shape, legend_x + 8, legend_y + 8, 6, cfg.station_color, 2)
+            # 画文字
+            lbl = self.font_small.render(label, True, cfg.text_color)
+            self.screen.blit(lbl, (legend_x + 18, legend_y))
+            legend_x += lbl.get_width() + 30
 
         # 底部: 操作提示
         bottom_y = cfg.window_height - 30

@@ -1,11 +1,12 @@
 # run.py — 运行迷你地铁世界
 import random
-from station import station
+from station import station, CATEGORY_SHAPE_MAP
 from line import MetroLine
 from trainInventory import TrainInventory
 from passengerManager import PassengerManager
 from passenger import Passenger
 from game_config import GameConfig
+from city_generator import generate_city
 
 OVERCROWD_LIMIT = 15  # 默认值，实际由 config 控制
 
@@ -31,7 +32,26 @@ class MetroWorld:
     # ============================================================
 
     def setup(self):
-        """两条线路, 共享换乘站"""
+        """生成城市站点，不预设线路 — AI/玩家需要自行布线"""
+        self.pm = PassengerManager(self)
+        self.ti = TrainInventory(self.pm, self.config)
+
+        # 用城市生成器创建站点
+        self.stations = generate_city(self.config, id_start=0)
+        self._next_station_id = max((s.id for s in self.stations), default=0)
+
+        # 初始资源
+        for _ in range(5):
+            self.ti.addTrain()
+        for _ in range(10):
+            self.ti.addCarriage()
+
+        self._rebuild_all_connections()
+        self._print_init_summary()
+
+    # 保留旧的 setup 方法名兼容，但标记为旧版
+    def setup_legacy(self):
+        """旧版: 两条预设线路, 共享换乘站"""
         self.pm = PassengerManager(self)
         self.ti = TrainInventory(self.pm, self.config)
 
@@ -74,9 +94,9 @@ class MetroWorld:
         self._rebuild_all_connections()
         self._print_init_summary()
 
-    def _make_station(self, stype, x, y):
+    def _make_station(self, stype, x, y, category=None):
         self._next_station_id += 1
-        return station(self._next_station_id, stype, x, y)
+        return station(self._next_station_id, stype, x, y, category=category)
 
     def _alloc_line_id(self):
         self._next_line_id += 1
@@ -95,6 +115,17 @@ class MetroWorld:
         print(f"站点数: {len(self.stations)}")
         print(f"线路数: {len(self.metroLine)}")
         print(f"列车数: {len(self.ti.trainBusyList)}")
+
+        # 按类别汇总站点
+        from station import CATEGORY_LABEL_CN
+        cat_count = {}
+        for s in self.stations:
+            cat = s.category or "unknown"
+            cat_count[cat] = cat_count.get(cat, 0) + 1
+        for cat, cnt in cat_count.items():
+            label = CATEGORY_LABEL_CN.get(cat, cat)
+            print(f"  {label}: {cnt} 个站点")
+
         for line in self.metroLine:
             line.printLine()
         print("=" * 60)
@@ -232,19 +263,36 @@ class MetroWorld:
 
     def getGameState(self):
         """返回标准化的游戏状态快照"""
+        cfg = self.config
+        period = cfg.get_current_period(self.tick)
+        od_weights = cfg.get_od_weights(self.tick)
+
         return {
             "tick": self.tick,
             "game_over": self.game_over,
+
+            # 时间信息
+            "time_of_day": {
+                "tick_in_day": self.tick % cfg.day_length,
+                "day_length": cfg.day_length,
+                "period": period,
+                "active_od_patterns": [
+                    {"origin": o, "destination": d, "weight": w}
+                    for o, d, w in od_weights
+                ],
+            },
 
             # 站点信息
             "stations": [
                 {
                     "id": s.id,
                     "type": s.type,
+                    "category": s.category,
                     "x": s.x,
                     "y": s.y,
                     "passenger_count": s.passengerNm,
                     "connecting_lines": self._get_lines_at_station(s),
+                    "passengers_by_dest_category": self._passenger_breakdown(s),
                 }
                 for s in self.stations
             ],
@@ -254,6 +302,7 @@ class MetroWorld:
                 {
                     "id": l.number,
                     "station_ids": [s.id for s in l.stationList],
+                    "station_categories": [s.category for s in l.stationList],
                     "train_count": l.trainNm,
                 }
                 for l in self.metroLine
@@ -289,6 +338,87 @@ class MetroWorld:
         """获取经过指定站点的所有线路 id"""
         return [l.number for l in self.metroLine if s in l.stationList]
 
+    def _passenger_breakdown(self, s):
+        """获取站点等待乘客的目的地类别分布"""
+        breakdown = {}
+        for p in s.passenger_list:
+            dest_cat = p.destination_station.category or "unknown"
+            breakdown[dest_cat] = breakdown.get(dest_cat, 0) + 1
+        return breakdown
+
+    # ---- AI 辅助查询方法 ----
+
+    def getUnconnectedStations(self):
+        """返回所有未连接到任何线路的站点列表"""
+        return [s for s in self.stations if not self._get_lines_at_station(s)]
+
+    def getCategoryCoverage(self):
+        """返回各类别的线路覆盖率
+
+        Returns:
+            dict: {category: {"connected": n, "total": n, "lines": set()}}
+        """
+        coverage = {}
+        for cat in self.config.all_categories:
+            stations_in_cat = [s for s in self.stations if s.category == cat]
+            connected = [s for s in stations_in_cat if self._get_lines_at_station(s)]
+            # 哪些线路覆盖了这个类别
+            lines_covering = set()
+            for s in connected:
+                for l_id in self._get_lines_at_station(s):
+                    lines_covering.add(l_id)
+            coverage[cat] = {
+                "connected": len(connected),
+                "total": len(stations_in_cat),
+                "lines": sorted(lines_covering),
+            }
+        return coverage
+
+    def findNearestStation(self, x, y, category=None, only_unconnected=False):
+        """找离指定坐标最近的站点
+
+        Args:
+            x, y: 世界坐标
+            category: 只找该类别的站点, None 为不限
+            only_unconnected: 只找未连接线路的站点
+
+        Returns:
+            station 对象, 或 None
+        """
+        best = None
+        best_dist = float('inf')
+        for s in self.stations:
+            if category and s.category != category:
+                continue
+            if only_unconnected and self._get_lines_at_station(s):
+                continue
+            d = ((s.x - x) ** 2 + (s.y - y) ** 2) ** 0.5
+            if d < best_dist:
+                best_dist = d
+                best = s
+        return best
+
+    def findStationById(self, station_id):
+        """按 ID 查找站点"""
+        for s in self.stations:
+            if s.id == station_id:
+                return s
+        return None
+
+    def findLineById(self, line_id):
+        """按 ID 查找线路"""
+        for l in self.metroLine:
+            if l.number == line_id:
+                return l
+        return None
+
+    def findTrainById(self, train_id):
+        """按 ID 查找列车"""
+        for t in self.ti.trainBusyList:
+            if t.number == train_id:
+                return t
+        return None
+
     def _compute_metrics(self):
         """计算全局评估指标"""
         if not self.stations:
@@ -317,10 +447,17 @@ class MetroWorld:
             if s.passengerNm >= overcrowd_threshold
         )
 
+        # 无线路连接的站点数
+        unconnected_stations = sum(
+            1 for s in self.stations
+            if not self._get_lines_at_station(s)
+        )
+
         return {
             "max_station_passengers": max_passengers,
             "avg_waiting_time": round(avg_wait, 1),
             "at_risk_stations": at_risk_stations,
+            "unconnected_stations": unconnected_stations,
             "total_arrived": arrived_count,
             "total_on_train": on_train_count,
             "total_waiting": len(waiting_times),
@@ -344,10 +481,10 @@ class MetroWorld:
         # 更新乘客等待时间
         self.pm.update_all_passengers()
 
-        # 随机生成乘客
-        self._spawn_passengers()
+        # 按日调度生成乘客
+        self._spawn_passengers_scheduled()
 
-        # 动态站点生成
+        # 动态站点生成（淡化，极少出现）
         self._maybe_spawn_station()
 
         # 资源增长
@@ -369,8 +506,47 @@ class MetroWorld:
             waiting = sum(1 for p in self.pm.passenger_list if p.status in ("waiting", "transferring"))
             print(f"\n统计: 到达={arrived}, 在车上={on_train}, 等候中={waiting}")
 
+    def _spawn_passengers_scheduled(self):
+        """按日调度生成乘客
+
+        根据当前时段和 O-D 流量模式，按概率在各类别站点生成乘客。
+        """
+        cfg = self.config
+        period = cfg.get_current_period(self.tick)
+        base_rate = cfg.get_spawn_rate(self.tick)
+        od_weights = cfg.get_od_weights(self.tick)
+
+        if not od_weights:
+            return
+
+        # 按 O-D 权重加权随机
+        total_weight = sum(w for _, _, w in od_weights)
+
+        # 对每个活跃 O-D 对，尝试生成乘客
+        for origin_cat, dest_cat, weight in od_weights:
+            # 计算该 O-D 对的生成概率
+            prob = base_rate * weight / total_weight
+
+            if random.random() >= prob:
+                continue
+
+            # 找该类别的始发站
+            origin_stations = [s for s in self.stations if s.category == origin_cat]
+            dest_stations = [s for s in self.stations if s.category == dest_cat]
+
+            if not origin_stations or not dest_stations:
+                continue
+
+            origin = random.choice(origin_stations)
+            destinations = [s for s in dest_stations if s != origin]
+            if not destinations:
+                continue
+            dest = random.choice(destinations)
+
+            self.pm.generate_passenger(origin, dest)
+
     def _spawn_passengers(self):
-        """按配置生成乘客"""
+        """旧版: 按配置生成乘客（已弃用，保留兼容）"""
         cfg = self.config
         spawn_chance = min(
             cfg.passenger_spawn_max_chance,
@@ -383,7 +559,7 @@ class MetroWorld:
                 self.generate_random_passenger()
 
     def _maybe_spawn_station(self):
-        """按配置动态生成新站点"""
+        """按配置动态生成新站点（已淡化）"""
         cfg = self.config
         if len(self.stations) >= cfg.station_max_count:
             return
@@ -465,13 +641,16 @@ class MetroWorld:
         return None
 
     def print_status(self):
-        print(f"\n--- Tick {self.tick} ---")
+        cfg = self.config
+        period = cfg.get_current_period(self.tick)
+        print(f"\n--- Tick {self.tick} (时段: {period}) ---")
         print("站点候车:")
-        limit = self.config.overcrowd_limit
+        limit = cfg.overcrowd_limit
         for s in self.stations:
             marker = " !!!" if s.passengerNm >= limit - 2 else ""
             lines_at = self._get_lines_at_station(s)
-            print(f"  {s} 等候{s.passengerNm}人 线路{lines_at}{marker}")
+            cat = s.category or "?"
+            print(f"  {s} [{cat}] 等候{s.passengerNm}人 线路{lines_at}{marker}")
         print("列车状态:")
         for tr in self.ti.trainBusyList:
             carriage_info = ""
