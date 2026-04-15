@@ -508,5 +508,16 @@ class MetroWorld:
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Mini Metro")
+    parser.add_argument("--visual", action="store_true", help="启用 pygame 可视化模式")
+    parser.add_argument("--max-ticks", type=int, default=500, help="最大 tick 数 (默认 500)")
+    args = parser.parse_args()
+
     world = MetroWorld()
-    world.run()
+    if args.visual:
+        from visualizer import Visualizer
+        viz = Visualizer(world)
+        viz.run(max_ticks=args.max_ticks)
+    else:
+        world.run(max_ticks=args.max_ticks)

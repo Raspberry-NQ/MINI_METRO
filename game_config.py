@@ -54,3 +54,28 @@ class GameConfig:
         # ---- 乘客 ----
         self.passenger_default_patience = 100  # 乘客默认耐心值
         self.passenger_transfer_penalty = 5    # 换乘惩罚时间
+
+        # ---- 可视化 ----
+        self.window_width = 1200                # 窗口宽度
+        self.window_height = 800                # 窗口高度
+        self.fps = 30                           # 渲染帧率
+        self.sim_speed = 5                      # 每帧模拟 tick 数（可调节）
+        self.station_radius = 18                # 站点绘制半径
+        self.train_size = 10                    # 列车绘制大小
+        self.passenger_size = 4                 # 乘客绘制大小
+        self.line_width = 6                     # 线路绘制宽度
+        self.hud_font_size = 16                 # HUD 字体大小
+        self.bg_color = (245, 245, 235)         # 背景色
+        self.station_color = (60, 60, 60)       # 站点边框色
+        self.station_fill = (255, 255, 255)     # 站点填充色
+        self.text_color = (40, 40, 40)          # 文字颜色
+        self.overcrowd_color = (220, 50, 50)    # 拥堵警告色
+        self.line_colors = [                    # 线路颜色 (最多7条)
+            (220, 60, 60),     # 红
+            (60, 120, 220),    # 蓝
+            (60, 180, 60),     # 绿
+            (220, 180, 40),    # 黄
+            (160, 60, 200),    # 紫
+            (220, 130, 40),    # 橙
+            (40, 180, 180),    # 青
+        ]
