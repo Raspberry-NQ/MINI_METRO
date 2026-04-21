@@ -100,122 +100,135 @@ class TrainInventory:
             print(updateTrain[i])
             print(updateStatus[i])
 
-            if updateStatus[i] == 1:  # 落客
-                if updateTrain[i].status != 4:
-                    raise TrainError(f"前状态有误,期望running(4),实际为{updateTrain[i].status}")
-                # 列车到站，先调用 nextStation 获取目标站（可能自动掉头）
-                arrival_station = updateTrain[i].line.nextStation(updateTrain[i])
-                # 检查该站是否被同线路其他列车占用
-                if self._is_station_occupied_by_same_line(updateTrain[i], arrival_station):
-                    # 被占用，不能进站。将列车置于站外等待状态
-                    updateTrain[i].stationNow = arrival_station  # 列车已到达该站外
-                    updateTrain[i].status = 2  # 临时设为 boarding，以便 setWaiting 可以调用
-                    dt = updateTrain[i].setWaiting(arrival_station, self.config, before_departure=False)
-                    self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
-                    continue
-                # 处理乘客下车
-                if self.passenger_manager:
-                    self.passenger_manager.process_passenger_alighting(updateTrain[i])
-                dt = updateTrain[i].setAlighting(arrival_station)
-                self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
-                continue
-
-            elif updateStatus[i] == 2:  # 上客
-                # 如果是从 shunting 转来，先恢复 stationNow
-                if updateTrain[i].status == 5 and updateTrain[i]._shunting_arrival_station:
-                    updateTrain[i].stationNow = updateTrain[i]._shunting_arrival_station
-                    updateTrain[i]._shunting_arrival_station = None
-
-                # 如果是从 waiting 转来，说明前方站之前被占用，重新检查
-                if updateTrain[i].status == 6:
-                    # waiting 结束，重新检查是否可以进入下一站
-                    updateTrain[i].status = 2  # 临时恢复为 boarding 状态
-                    waiting_target = updateTrain[i]._waiting_for_station
-                    before_departure = updateTrain[i]._waiting_before_departure
-                    updateTrain[i]._waiting_for_station = None
-
-                    if before_departure:
-                        # 出发前等待：检查前方站是否仍被占用
-                        if updateTrain[i].line and updateTrain[i].line.isNextStationBlocked(updateTrain[i]):
-                            dt = updateTrain[i].setWaiting(waiting_target, self.config, before_departure=True)
-                            self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
-                            continue
-                        # 前方站已空闲，可以出发
-                        dt = updateTrain[i].setRunning(waiting_target)
-                        self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
-                        continue
-                    else:
-                        # 到达站外等待：检查目标站是否仍被占用
-                        if self._is_station_occupied_by_same_line(updateTrain[i], waiting_target):
-                            dt = updateTrain[i].setWaiting(waiting_target, self.config, before_departure=False)
-                            self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
-                            continue
-                        # 前方站已空闲，处理落客并进站
-                        if self.passenger_manager:
-                            self.passenger_manager.process_passenger_alighting(updateTrain[i])
-                        dt = updateTrain[i].setAlighting(waiting_target)
-                        self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
-                        continue
-
-                # 处理乘客上车
-                if self.passenger_manager is None:
-                    raise TrainError("passengermanager is None")
-                else:
-                    self.passenger_manager.process_passenger_boarding(updateTrain[i])
-
-                if updateTrain[i].waitShunting:
-                    # 收到调车指令
-                    originLine = updateTrain[i].line
-                    target_line = updateTrain[i].shuntingTargetLine
-                    target_station = updateTrain[i].shuntingTargetStation
-                    target_direction = updateTrain[i].shuntingTargetDirection
-                    # 强制乘客下车
-                    if self.passenger_manager:
-                        self.passenger_manager.force_alight_all(updateTrain[i], target_station or updateTrain[i].stationNow)
-                    # setShunting 在 removeTrainFromLine 之前调，因为需要 self.line 计算调车时间
-                    dt = updateTrain[i].setShunting(target_line, arrival_station=target_station)
-                    originLine.removeTrainFromLine(updateTrain[i])
-                    target_line.addNewTrainToLine(updateTrain[i], target_station, target_direction)
-                    self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
-                    continue
-                else:
-                    # 开始上客
-                    next_station = updateTrain[i].stationNow
-                    dt = updateTrain[i].setBoarding(next_station)
-                    self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
-                    continue
-
-            elif updateStatus[i] == 3:  # 等待/idle
-                # idle 状态结束后，检查列车是否有线路和站点
-                tr = updateTrain[i]
-                if tr.line and tr.stationNow:
-                    # 有线路且有站点，尝试重新上客
-                    next_station = tr.line.nextStation(tr)
-                    dt = tr.setBoarding(next_station)
-                    self.trainTimer.register(dt, tr, tr.nextStatus)
-                else:
-                    # 没有线路或没有站点，继续空闲
-                    dt = tr.setIdle()
-                    self.trainTimer.register(dt, tr, tr.nextStatus)
-                continue
-
-            elif updateStatus[i] == 4:  # running
-                if updateTrain[i].waitShunting:
-                    # 列车正在运行但收到调车指令，等到达下一站后再调车
-                    # 正常落客，在落客完成后（状态2）检查waitShunting
+            try:
+                self._update_single_train(updateTrain[i], updateStatus[i])
+            except Exception as e:
+                print(f"[ERROR] 列车 {updateTrain[i].number} 更新出错(状态{updateStatus[i]}): {e}")
+                # 尝试将出错列车置为 idle，避免后续卡死
+                try:
+                    updateTrain[i].status = 3
+                    updateTrain[i].nextStatusTime = -1
+                    updateTrain[i].nextStatus = 3
+                except Exception:
                     pass
-                next_station = updateTrain[i].line.nextStation(updateTrain[i])
-                # 检查前方站是否被占用
-                if updateTrain[i].line.isNextStationBlocked(updateTrain[i]):
-                    dt = updateTrain[i].setWaiting(next_station, self.config)
-                    self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
-                    continue
-                dt = updateTrain[i].setRunning(next_station)
-                self.trainTimer.register(dt, updateTrain[i], updateTrain[i].nextStatus)
-                continue
 
+    def _update_single_train(self, train_obj, status_code):
+        """处理单辆列车的状态转移，出错时不影响其他列车"""
+        if status_code == 1:  # 落客
+            if train_obj.status != 4:
+                raise TrainError(f"前状态有误,期望running(4),实际为{train_obj.status}")
+            # 列车到站，先调用 nextStation 获取目标站（可能自动掉头）
+            arrival_station = train_obj.line.nextStation(train_obj)
+            # 检查该站是否被同线路其他列车占用
+            if self._is_station_occupied_by_same_line(train_obj, arrival_station):
+                # 被占用，不能进站。将列车置于站外等待状态
+                train_obj.stationNow = arrival_station  # 列车已到达该站外
+                train_obj.status = 2  # 临时设为 boarding，以便 setWaiting 可以调用
+                dt = train_obj.setWaiting(arrival_station, self.config, before_departure=False)
+                self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
+                return
+            # 处理乘客下车
+            if self.passenger_manager:
+                self.passenger_manager.process_passenger_alighting(train_obj)
+            dt = train_obj.setAlighting(arrival_station)
+            self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
+            return
+
+        elif status_code == 2:  # 上客
+            # 如果是从 shunting 转来，先恢复 stationNow
+            if train_obj.status == 5 and train_obj._shunting_arrival_station:
+                train_obj.stationNow = train_obj._shunting_arrival_station
+                train_obj._shunting_arrival_station = None
+
+            # 如果是从 waiting 转来，说明前方站之前被占用，重新检查
+            if train_obj.status == 6:
+                # waiting 结束，重新检查是否可以进入下一站
+                train_obj.status = 2  # 临时恢复为 boarding 状态
+                waiting_target = train_obj._waiting_for_station
+                before_departure = train_obj._waiting_before_departure
+                train_obj._waiting_for_station = None
+
+                if before_departure:
+                    # 出发前等待：检查前方站是否仍被占用
+                    if train_obj.line and train_obj.line.isNextStationBlocked(train_obj):
+                        dt = train_obj.setWaiting(waiting_target, self.config, before_departure=True)
+                        self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
+                        return
+                    # 前方站已空闲，可以出发
+                    dt = train_obj.setRunning(waiting_target)
+                    self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
+                    return
+                else:
+                    # 到达站外等待：检查目标站是否仍被占用
+                    if self._is_station_occupied_by_same_line(train_obj, waiting_target):
+                        dt = train_obj.setWaiting(waiting_target, self.config, before_departure=False)
+                        self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
+                        return
+                    # 前方站已空闲，处理落客并进站
+                    if self.passenger_manager:
+                        self.passenger_manager.process_passenger_alighting(train_obj)
+                    dt = train_obj.setAlighting(waiting_target)
+                    self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
+                    return
+
+            # 处理乘客上车
+            if self.passenger_manager is None:
+                raise TrainError("passengermanager is None")
             else:
-                raise TrainError(f"未知的nextStatus: {updateStatus[i]}")
+                self.passenger_manager.process_passenger_boarding(train_obj)
+
+            if train_obj.waitShunting:
+                # 收到调车指令
+                originLine = train_obj.line
+                target_line = train_obj.shuntingTargetLine
+                target_station = train_obj.shuntingTargetStation
+                target_direction = train_obj.shuntingTargetDirection
+                # 强制乘客下车
+                if self.passenger_manager:
+                    self.passenger_manager.force_alight_all(train_obj, target_station or train_obj.stationNow)
+                # setShunting 在 removeTrainFromLine 之前调，因为需要 self.line 计算调车时间
+                dt = train_obj.setShunting(target_line, arrival_station=target_station)
+                originLine.removeTrainFromLine(train_obj)
+                target_line.addNewTrainToLine(train_obj, target_station, target_direction)
+                self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
+                return
+            else:
+                # 开始上客
+                next_station = train_obj.stationNow
+                dt = train_obj.setBoarding(next_station)
+                self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
+                return
+
+        elif status_code == 3:  # 等待/idle
+            # idle 状态结束后，检查列车是否有线路和站点
+            if train_obj.line and train_obj.stationNow:
+                # 有线路且有站点，尝试重新上客
+                next_station = train_obj.line.nextStation(train_obj)
+                dt = train_obj.setBoarding(next_station)
+                self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
+            else:
+                # 没有线路或没有站点，继续空闲
+                dt = train_obj.setIdle()
+                self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
+            return
+
+        elif status_code == 4:  # running
+            if train_obj.waitShunting:
+                # 列车正在运行但收到调车指令，等到达下一站后再调车
+                # 正常落客，在落客完成后（状态2）检查waitShunting
+                pass
+            next_station = train_obj.line.nextStation(train_obj)
+            # 检查前方站是否被占用
+            if train_obj.line.isNextStationBlocked(train_obj):
+                dt = train_obj.setWaiting(next_station, self.config)
+                self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
+                return
+            dt = train_obj.setRunning(next_station)
+            self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
+            return
+
+        else:
+            raise TrainError(f"未知的nextStatus: {status_code}")
 
     def printInformation(self):
         print("车库信息->")

@@ -1,4 +1,5 @@
 # run.py — 运行迷你地铁世界
+import sys
 import random
 from station import station, CATEGORY_SHAPE_MAP
 from line import MetroLine
@@ -476,35 +477,56 @@ class MetroWorld:
         self.tick += 1
 
         # 更新列车
-        self.ti.updateAllTrain()
+        try:
+            self.ti.updateAllTrain()
+        except Exception as e:
+            print(f"[ERROR] tick {self.tick} 更新列车时出错: {e}")
 
         # 更新乘客等待时间
-        self.pm.update_all_passengers()
+        try:
+            self.pm.update_all_passengers()
+        except Exception as e:
+            print(f"[ERROR] tick {self.tick} 更新乘客时出错: {e}")
 
         # 按日调度生成乘客
-        self._spawn_passengers_scheduled()
+        try:
+            self._spawn_passengers_scheduled()
+        except Exception as e:
+            print(f"[ERROR] tick {self.tick} 生成乘客时出错: {e}")
 
         # 动态站点生成（淡化，极少出现）
-        self._maybe_spawn_station()
+        try:
+            self._maybe_spawn_station()
+        except Exception as e:
+            print(f"[ERROR] tick {self.tick} 生成站点时出错: {e}")
 
         # 资源增长
-        self._resource_growth()
+        try:
+            self._resource_growth()
+        except Exception as e:
+            print(f"[ERROR] tick {self.tick} 资源增长时出错: {e}")
 
         # 检查拥堵
-        crowded = self.check_overcrowd()
-        if crowded:
-            self.game_over = True
-            print(f"\n{'!' * 60}")
-            print(f"游戏结束! 站点 {crowded} 过度拥堵! (等候{crowded.passengerNm}人)")
-            print(f"共经过 {self.tick} 个 tick")
-            print(f"{'!' * 60}")
-            self.print_status()
+        try:
+            crowded = self.check_overcrowd()
+            if crowded:
+                self.game_over = True
+                print(f"\n{'!' * 60}")
+                print(f"游戏结束! {crowded.id}号站乘客爆满! (等候{crowded.passengerNm}人)")
+                print(f"共经过 {self.tick} 个 tick")
+                print(f"{'!' * 60}")
+                self.print_status()
 
-            # 打印最终统计
-            arrived = sum(1 for p in self.pm.passenger_list if p.status == "arrived")
-            on_train = sum(1 for p in self.pm.passenger_list if p.status == "on_train")
-            waiting = sum(1 for p in self.pm.passenger_list if p.status in ("waiting", "transferring"))
-            print(f"\n统计: 到达={arrived}, 在车上={on_train}, 等候中={waiting}")
+                # 打印最终统计
+                arrived = sum(1 for p in self.pm.passenger_list if p.status == "arrived")
+                on_train = sum(1 for p in self.pm.passenger_list if p.status == "on_train")
+                waiting = sum(1 for p in self.pm.passenger_list if p.status in ("waiting", "transferring"))
+                print(f"\n统计: 到达={arrived}, 在车上={on_train}, 等候中={waiting}")
+                sys.exit(1)
+        except SystemExit:
+            raise
+        except Exception as e:
+            print(f"[ERROR] tick {self.tick} 检查拥堵时出错: {e}")
 
     def _spawn_passengers_scheduled(self):
         """按日调度生成乘客
@@ -675,7 +697,10 @@ class MetroWorld:
 
             # AI 决策：每 10 tick 调用一次
             if ai_callback and self.tick % 10 == 0:
-                ai_callback(self)
+                try:
+                    ai_callback(self)
+                except Exception as e:
+                    print(f"[ERROR] tick {self.tick} AI回调出错: {e}")
 
             # 每 10 tick 打印一次
             if self.tick % 10 == 0:

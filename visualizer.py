@@ -97,9 +97,9 @@ class Visualizer:
         self.clock = pygame.time.Clock()
 
         # 字体
-        self.font = pygame.font.SysFont("Arial", self.config.hud_font_size)
-        self.font_large = pygame.font.SysFont("Arial", self.config.hud_font_size + 8, bold=True)
-        self.font_small = pygame.font.SysFont("Arial", self.config.hud_font_size - 4)
+        self.font = pygame.font.SysFont("songti", self.config.hud_font_size)
+        self.font_large = pygame.font.SysFont("songti", self.config.hud_font_size + 8, bold=True)
+        self.font_small = pygame.font.SysFont("songti", self.config.hud_font_size - 4)
 
         # 视口平移 & 缩放
         self.offset_x = self.config.window_width // 2
@@ -762,6 +762,10 @@ class Visualizer:
                         if self.world.game_over:
                             break
                         self.world.updateOneTick()
+                except Exception as e:
+                    sys.stdout = _original_stdout
+                    print(f"[ERROR] 可视化模拟更新出错: {e}")
+                    sys.stdout = io.StringIO()  # 临时恢复，让 finally 统一处理
                 finally:
                     sys.stdout = _original_stdout
 

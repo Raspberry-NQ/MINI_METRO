@@ -15,8 +15,7 @@ class PassengerManager:
     def generate_passenger(self, origin, destination, preference="fastest"):
         """生成新乘客并规划路径"""
         self.passenger_id_counter += 1
-        patience = self.config.passenger_default_patience if self.config else 100
-        passenger = Passenger(self.passenger_id_counter, origin, destination, preference, patience)
+        passenger = Passenger(self.passenger_id_counter, origin, destination, preference)
         passenger.plan_route(self.route_planner)
 
         if passenger.planned_route:
@@ -63,14 +62,23 @@ class PassengerManager:
 
         for carriage in train.carriageList:
             for passenger in carriage.passenger_list[:]:
-                if passenger.current_route_index >= len(passenger.planned_route) - 1:
-                    # 到达目的地
+                # 推进 route_index 到当前站对应的步骤（跳过途中经过的站）
+                # 但不停在换乘步（line 变化的步），换乘步由下面的检测逻辑处理
+                while (passenger.current_route_index < len(passenger.planned_route) - 1 and
+                       passenger.planned_route[passenger.current_route_index + 1]['station'] is train.stationNow and
+                       passenger.planned_route[passenger.current_route_index + 1]['line'] is not None and
+                       passenger.planned_route[passenger.current_route_index + 1]['line'] is passenger.planned_route[passenger.current_route_index]['line']):
+                    passenger.current_route_index += 1
+
+                # 到达目的地
+                if train.stationNow is passenger.destination_station:
                     passenger.alight_train(train.stationNow)
                     passengers_to_alight.append(passenger)
                     carriage.passenger_list.remove(passenger)
                     carriage.currentNum = len(carriage.passenger_list)
-                elif self._should_transfer(passenger, train.stationNow):
-                    # 需要换乘
+                # 需要换乘：当前站的下一步使用不同线路
+                elif (passenger.current_route_index + 1 < len(passenger.planned_route) and
+                      passenger.planned_route[passenger.current_route_index + 1]['line'] is not passenger.planned_route[passenger.current_route_index]['line']):
                     passenger.alight_train(train.stationNow)
                     passengers_to_alight.append(passenger)
                     carriage.passenger_list.remove(passenger)
@@ -92,9 +100,10 @@ class PassengerManager:
             for passenger in carriage.passenger_list[:]:
                 passenger.alight_train(station)
                 if passenger.status != "arrived":
-                    # 乘客未到达目的地，需要重新规划路径
+                    # 乘客未到达目的地，设为等待并更新目标线路
                     passenger.status = "waiting"
                     passenger.transfer_waiting = False
+                    passenger._update_current_target()
                 passengers_to_alight.append(passenger)
             carriage.passenger_list.clear()
             carriage.currentNum = 0
@@ -107,27 +116,8 @@ class PassengerManager:
 
         return passengers_to_alight
 
-    def _should_transfer(self, passenger, current_station):
-        """判断乘客是否需要在当前站换乘"""
-        if not passenger.planned_route or passenger.current_route_index >= len(passenger.planned_route):
-            return False
-
-        next_step = passenger.planned_route[passenger.current_route_index + 1]
-        return next_step['transfer'] and next_step['station'] == current_station
-
     def update_all_passengers(self):
         """更新所有乘客状态"""
         for passenger in self.passenger_list[:]:
             passenger.update_waiting_time()
 
-            if passenger.is_impatient() and passenger.status in ["waiting", "transferring"]:
-                print(f"乘客 {passenger.passenger_id} 失去耐心离开了")
-                self.remove_passenger(passenger)
-
-    def remove_passenger(self, passenger):
-        """移除乘客"""
-        if passenger in self.passenger_list:
-            self.passenger_list.remove(passenger)
-        if passenger.current_station and passenger in passenger.current_station.passenger_list:
-            passenger.current_station.passenger_list.remove(passenger)
-            passenger.current_station.passengerNm = len(passenger.current_station.passenger_list)

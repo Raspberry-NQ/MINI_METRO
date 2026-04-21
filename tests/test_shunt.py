@@ -276,7 +276,7 @@ def t():
     p = Passenger.__new__(Passenger)
     p.passenger_id = 1; p.origin_station = sA; p.destination_station = sD
     p.current_station = None; p.waiting_time = 0; p.status = "on_train"
-    p.patience = 100; p.preference = "fastest"
+    p.preference = "fastest"
     p.planned_route = [{'line': l1, 'direction': True, 'transfer': False, 'station': sD}]
     p.current_route_index = 0; p.target_line = l1; p.target_direction = True
     p.transfer_waiting = False

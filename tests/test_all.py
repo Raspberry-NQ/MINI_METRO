@@ -424,15 +424,6 @@ def t():
     assert p.waiting_time == 1
 test("Passenger update_waiting_time 已修复", t)
 
-def t():
-    """已修复: Passenger.is_impatient 方法存在且正常工作"""
-    s1, s2 = station(1,"c",0,0), station(2,"t",100,0)
-    p = Passenger(1, s1, s2)
-    assert p.is_impatient() == False
-    p.waiting_time = 200
-    assert p.is_impatient() == True
-test("Passenger is_impatient 已修复", t)
-
 # ============================================================
 # 6. PassengerManager
 # ============================================================

@@ -148,7 +148,6 @@ class GameConfig:
         self.train_wait_time = 3  # 前方站被占用时，等待重试间隔
 
         # ---- 乘客 ----
-        self.passenger_default_patience = 100
         self.passenger_transfer_penalty = 5
 
         # ---- 可视化 ----
