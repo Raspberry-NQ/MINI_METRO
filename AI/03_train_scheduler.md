@@ -2,18 +2,25 @@
 
 ## 问题定义
 
-每 10 tick 观察一次环境状态，决定：
+每 60 tick（约 1 小时）观察一次环境状态，决定：
 1. 是否将列车从一条线调到另一条线（playerTrainShunt）
 2. 是否从车库分配列车到某条线（playerEmployTrain）
 3. 是否给某列车加车厢（playerConnectCarriage）
 
-约束：列车总数有限、调车有冷却时间、决策要有惯性避免振荡。
+约束：
+- 列车总数有限（max_trains=20, max_carriages=40）
+- 每条线路最多 2 辆列车同时运营（max_trains_per_line=2）
+- 调车有冷却时间（同线 15 tick / 跨线 30 tick）
+- 决策要有惯性避免振荡
+- 一天共 1200 tick，20 个决策步
 
-## 算法选择：注意力驱动的多智能体决策 + DQN
+**关键约束**：线路在规划阶段已锁定，调度器只能做资源调度（调车、分配列车、加车厢），不能改线路。
 
-### 为什么是多智能体视角
+## 算法选择：注意力驱动的线路级决策 + Dueling DQN
 
-每条线路可以看作一个"智能体"，它需要列车和车厢资源。"调车"本质上是把资源从低需求线路转移到高需求线路。各线路的需求是动态且相互竞争的。
+### 为什么是线路级视角
+
+每条线路可以看作一个"资源需求方"，它需要列车和车厢。"调车"本质上是把资源从低需求线路转移到高需求线路。各线路的需求是动态且相互竞争的。
 
 ### 为什么用 DQN 而非策略梯度
 
@@ -40,8 +47,9 @@
 │                      = mean(train_embed[on_line_l]) (80)        │
 │    line_feature = concat(line_stations_embed,  │
 │                          line_trains_info,     │
-│                          [train_count, avg_load_ratio, │
-│                           total_waiting_on_line])     │
+│                          [train_count/max_trains_per_line,      │
+│                           avg_load_ratio,      │
+│                           total_waiting_on_line])               │
 │                → MLP(64+80+3 → 128)            │
 │                                                │
 │  线路间注意力:                                   │
@@ -59,6 +67,7 @@
 │  头1: 分配列车 (playerEmployTrain)              │
 │    Q(line_l) = MLP(context_l, global) → 标量   │
 │    动作: argmax_l Q(l) 当 available_train > 0   │
+│          且 line_l.train_count < max_trains_per_line │
 │    或 "不分配"                                  │
 │                                                │
 │  头2: 调车 (playerTrainShunt)                  │
@@ -66,6 +75,7 @@
 │                                    context_l)  │
 │                                  → 标量         │
 │    动作: argmax_{m,l} Q(m,l) 的有效调车方案      │
+│    约束: target_line_l 列车数 < max_trains_per_line │
 │    或 "不调车"                                  │
 │                                                │
 │  头3: 加车厢 (playerConnectCarriage)            │
@@ -86,25 +96,27 @@
   L+1..L+M: 给列车 1..M 加车厢
   L+M+1..L+M+M*L: 将列车 m 调到线路 l
 
-总动作数: 1 + L + M + M*L (约 1+7+15+105 = 128)
+总动作数: 1 + L + M + M*L (约 1+7+20+140 = 168)
 ```
 
 实际可用动作用**动作掩码**（action mask）过滤：
 - available_trains == 0 → 掩码所有分配动作
 - available_carriages == 0 → 掩码所有加车厢动作
 - 列车正在 shunting/running → 掩码该车调车动作（调车需要列车空闲）
+- 目标线路列车数已达 max_trains_per_line (2) → 掩码该线的分配/调车动作
 
 ### 时段感知机制
 
-调度器必须在时段切换前预判：
+调度器必须在时段切换前预判。一天 1200 tick 有 7 个时段（见 daily_periods 配置）：
 
 ```
 时段嵌入 = Embedding(period_id, dim=16) + Embedding(next_period_id, dim=16)
 ```
 
 这 32 维特征拼入全局特征。模型通过训练学习：
-- 晚高峰前 20 tick 将列车调到办公→居民线路
-- 午间前 10 tick 增加办公→商业方向运力
+- 早高峰 (tick 240~420) 前将列车调到居民→办公/学校线路
+- 晚高峰 (tick 720~900) 前将列车调到办公→居民线路
+- 夜间 (tick 0~240) 减少运行列车，节省成本
 
 ### 决策惯性
 
@@ -128,9 +140,9 @@ Q_inertial(m, l) = Q(m, l) - λ * (1 / ticks_since_last_shunt_on_line_l)
 
 ### Prioritized Experience Replay
 
-调度中， rare 但关键的决策（如即将拥堵前正确调车）比常规决策更有学习价值。PER 让这些高 TD-error 的经验被更频繁地回放。
+调度中，rare 但关键的决策（如即将拥堵前正确调车）比常规决策更有学习价值。PER 让这些高 TD-error 的经验被更频繁地回放。
 
-### 奖励设计（每 10 tick）
+### 奖励设计（每 60 tick / 每小时）
 
 | 奖励项 | 计算 | 权重 |
 |--------|------|------|
@@ -142,16 +154,32 @@ Q_inertial(m, l) = Q(m, l) - λ * (1 / ticks_since_last_shunt_on_line_l)
 
 奖励的关键是**差分形式**（变化量而非绝对值），让模型关注"我的决策是否改善了局面"。
 
+### Episode 设计
+
+每个 episode = 一天的运营：
+
+```
+1. AIWorld.setup() → 生成城市
+2. 用线路规划器生成初始线路 → lock_lines()
+3. place_initial_trains()
+4. run_one_day():
+     - 1200 tick
+     - 每 60 tick (1 小时) 调度器决策一次，共 20 步
+     - 采集 (s, a, r, s') 四元组
+5. 一天结束，读取结算报告
+6. 重启下一个 episode
+```
+
 ### 训练流程
 
 ```
 1. 用当前线路规划器生成初始线路
-2. 运行调度器，每 10 tick 采集 (s, a, r, s') 四元组
+2. 运行调度器，每 60 tick 采集 (s, a, r, s') 四元组
 3. 存入 PER buffer
 4. 每 100 tick 从 buffer 采样一批，更新 Dueling DQN
 5. ε-greedy 探索：ε 从 1.0 线性衰减到 0.05
 6. 目标网络每 1000 步软更新
-7. 一次 episode = 500~1500 tick，结束后重启
+7. 一次 episode = 1200 tick (一天)，结束后重启
 ```
 
 ## 备选方案对比

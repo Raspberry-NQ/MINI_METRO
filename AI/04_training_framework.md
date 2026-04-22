@@ -4,6 +4,14 @@
 
 线路规划器和列车调度器不能独立训练——线路规划决定了调度的难度，调度的效果反映了规划的质量。但联合训练两个网络风险太高（一个不收敛会拖垮另一个），所以采用**分阶段训练 → 联合微调**的策略。
 
+### 与 AIWorld 的关系
+
+所有训练都基于 `AIWorld` 类（`ai_world.py`）：
+- `setup()` 一次性生成所有站点
+- 规划阶段：`build_lines()` → `place_initial_trains()` → `lock_lines()`
+- 运行阶段：`run_one_day(ai_callback)` 运行 1200 tick，每小时调用调度器
+- 每天结束返回结算报告，用于计算奖励
+
 ## 阶段 1：线路规划器预训练
 
 ### 目标
@@ -28,8 +36,8 @@
 **Step 2: PPO 微调**
 
 在行为克隆的初始化基础上，用 PPO 做在线微调：
-- 每次规划后放入环境运行 300 tick（一天）
-- 用 02_line_planner.md 中的奖励信号更新策略
+- 每次规划后放入 AIWorld 运行一天 (1200 tick)
+- 用结算报告计算奖励（见 02_line_planner.md）
 - 初始 learning rate 降低到 1e-5（避免破坏已学到的知识）
 
 ### 数据增强
@@ -70,11 +78,19 @@
 
 ### Episode 设计
 
-每个 episode：
-1. 用城市生成器生成地图
-2. 用线路规划器生成初始线路
-3. 运行调度器直到 game_over 或 1500 tick
-4. 重启
+每个 episode = 一天 (1200 tick)：
+
+```
+1. AIWorld.setup() → 生成城市
+2. 用线路规划器生成初始线路 → lock_lines()
+3. place_initial_trains()
+4. run_one_day():
+     - 1200 tick
+     - 每 60 tick 调度器决策一次
+     - 共 20 个决策步，采集 (s, a, r, s') 四元组
+5. 一天结束，读取结算报告，计算 episode 总奖励
+6. 重启
+```
 
 每个 episode 的总奖励 = Σ(r_t * γ^t)，用于评估调度策略的质量。
 
@@ -89,27 +105,29 @@
 repeat:
   # 冻结调度器，更新规划器
   for i in range(5):
-    生成线路规划
-    固定调度器运行环境 300 tick
-    计算规划器奖励，PPO 更新规划器
+    AIWorld.setup()
+    生成线路规划 → build_lines → place_initial_trains → lock_lines
+    固定调度器运行一天 (1200 tick)
+    读取结算报告，计算规划器奖励，PPO 更新规划器
 
   # 冻结规划器，更新调度器
   for i in range(20):
-    固定规划器生成线路
-    调度器运行并采集经验
+    AIWorld.setup()
+    固定规划器生成线路 → lock_lines
+    调度器运行一天并采集经验
     Dueling DQN 更新
 
   # 每 10 轮联合微调
   两个网络同时解冻，降低 learning rate (0.1x)
-  端到端运行，两网络各自接收自己的奖励信号
+  端到端运行一天，两网络各自接收自己的奖励信号
 ```
 
 ### 奖励信号的归属
 
 两个网络共享环境，但奖励需要合理归属：
 
-- **线路规划器的奖励**：关注长期、结构性指标（类别覆盖率、O-D 可达性、换乘便利度、存活 tick 数）
-- **调度器的奖励**：关注短期、操作性指标（等待人数变化、载客效率、拥堵避免）
+- **线路规划器的奖励**：关注长期、结构性指标——来自一天结束后的结算报告（类别覆盖率、O-D 可达性、换乘便利度、存活状态、利润）
+- **调度器的奖励**：关注短期、操作性指标——每小时的差分奖励（等待人数变化、载客效率、拥堵避免）
 
 关键原则：**不给调度器奖励因为线路规划差而导致的惩罚**——这不公平，调度器无法改变线路结构。
 
@@ -119,25 +137,26 @@ repeat:
 
 ```python
 class TrainingEnv:
-    """训练环境封装 MetroWorld"""
+    """训练环境封装 AIWorld"""
 
     def reset(self):
-        self.world = MetroWorld(config=self.config)
+        self.world = AIWorld()
         self.world.setup()
         # 用线路规划器生成初始线路
         self._plan_initial_lines()
         return self._get_observation()
 
     def step(self, action):
-        """执行一个调度动作，运行 10 tick，返回 (obs, reward, done)"""
+        """执行一个调度动作，运行 60 tick，返回 (obs, reward, done)"""
         self._execute_action(action)
-        for _ in range(10):
+        for _ in range(60):
             self.world.updateOneTick()
             if self.world.game_over:
                 break
         obs = self._get_observation()
         reward = self._compute_reward()
-        return obs, reward, self.world.game_over
+        done = self.world.game_over or self.world.tick_in_day >= 1200
+        return obs, reward, done
 
     def _get_observation(self):
         state = self.world.getGameState()
@@ -169,12 +188,13 @@ class TrainingEnv:
 
 | 指标 | 说明 | 目标 |
 |------|------|------|
-| 存活 tick 中位数 | 单次 episode 存活多久 | > 800 tick |
+| 存活率 | 单次 episode 是否存活到 1200 tick | > 95% |
 | 类别覆盖率 | 各类别站点被线路覆盖的比例 | > 90% |
-| 平均等待时间 | 乘客从等待到上车的 tick 数 | < 30 tick |
+| 平均等待时间 | 乘客从等待到上车的 tick 数 | < 60 tick (< 1 小时) |
 | 列车利用率 | 列车载客率均值 | 40%-70% |
 | 拥堵率 | 拥堵风险站在全部站中的比例 | < 10% |
 | 到达率 | 乘客成功到达目的地的比例 | > 80% |
+| 日利润 | 结算报告中 profit | > 0 |
 
 ## 可视化训练进度
 
@@ -182,8 +202,9 @@ class TrainingEnv:
 - 每个 episode 的总奖励
 - 各奖励分项的变化趋势
 - ε 值衰减曲线
-- 存活 tick 数分布
+- 存活率
 - 动作分布（调度器各类动作的频率）
+- 每日结算报告中的关键指标趋势
 
 ## 目录结构规划
 
@@ -199,7 +220,7 @@ AI/
 │   ├── state_encoder.py         # GNN 状态编码器
 │   ├── line_planner.py          # 线路规划器 (Pointer Network + PPO)
 │   ├── train_scheduler.py       # 列车调度器 (Dueling DQN)
-│   ├── training_env.py          # 训练环境封装
+│   ├── training_env.py          # 训练环境封装 (基于 AIWorld)
 │   ├── reward.py                # 奖励函数
 │   ├── rule_based_planner.py    # 规则规划器 (用于行为克隆)
 │   └── models/                  # 网络模型定义

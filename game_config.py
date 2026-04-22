@@ -136,6 +136,7 @@ class GameConfig:
         self.default_carriages_per_train = 1
 
         # ---- 时间计算 ----
+        self.running_base_time = 0      # 两站间基础运行时间（AI模式设为8，模拟3分钟停车间隔）
         self.train_running_speed = 1.0
         self.boarding_base_time = 5
         self.boarding_per_passenger = 5
@@ -194,6 +195,68 @@ class GameConfig:
             CATEGORY_SCENIC: "景区",
             CATEGORY_SCHOOL: "学校",
         }
+
+    @classmethod
+    def for_ai_training(cls):
+        """生成 AI 训练专用配置
+
+        关键改动:
+        - day_length=1200 (20小时 × 60 tick/时, 1 tick ≈ 1 分钟)
+        - running_base_time=8 (两站间基础运行 8 tick ≈ 8 分钟，贴近现实)
+        - carriage_capacity=30 (更大容量，对应更长的列车)
+        - 禁用动态站点和资源增长（AI 世界一次性给齐）
+        - 同线路最多 2 辆车同时运营（防止拥堵）
+        """
+        cfg = cls()
+        # ---- 时间: 1 tick ≈ 1 分钟 ----
+        cfg.day_length = 1200  # 20 小时 × 60 = 1200 tick
+        cfg.running_base_time = 3  # 两站间基础运行 3 tick ≈ 3 分钟
+        cfg.train_running_speed = 0.04  # 距离贡献：80px ≈ 2 tick, 120px ≈ 3 tick
+        cfg.boarding_base_time = 2
+        cfg.boarding_per_passenger = 1
+        cfg.alighting_base_time = 2
+        cfg.alighting_per_passenger = 1
+        cfg.idle_time = 2
+        cfg.shunting_same_line_time = 15
+        cfg.shunting_diff_line_time = 30
+        cfg.shunting_no_line_time = 30
+        cfg.train_wait_time = 5
+        cfg.passenger_transfer_penalty = 10
+
+        # ---- 站点: 一次性生成 ----
+        cfg.station_spawn_interval = 0  # 禁用动态站点
+        cfg.station_spawn_chance = 0
+
+        # ---- 列车/车厢 ----
+        cfg.carriage_capacity = 30
+        cfg.default_carriages_per_train = 2
+        cfg.max_lines = 7
+        cfg.max_trains = 20
+        cfg.max_carriages = 40
+
+        # ---- 资源: 禁用渐进增长 ----
+        cfg.resource_growth_schedule = []
+
+        # ---- 同线路列车上限 ----
+        cfg.max_trains_per_line = 2
+
+        # ---- 拥堵 ----
+        cfg.overcrowd_limit = 50
+
+        # ---- 乘客生成率 ----
+        # 经测试，之前的 rate 过低 (1200 tick 仅生成 1-2 个乘客)
+        # 提升 rate 使高峰期每小时约产生 10-15 个乘客
+        cfg.period_base_spawn_rate = {
+            "night": 0.02,
+            "morning_rush": 0.20,
+            "morning": 0.08,
+            "midday": 0.10,
+            "evening_rush": 0.20,
+            "evening": 0.09,
+            "late_night": 0.04,
+        }
+
+        return cfg
 
     def get_current_period(self, tick):
         """根据 tick 返回当前时段名称"""

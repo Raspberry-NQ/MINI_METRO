@@ -3,12 +3,13 @@
 
 
 def countTrainRunningTime(sta, stb, config=None):
-    """计算两站之间运行时间（基于距离）"""
+    """计算两站之间运行时间（基于距离 + 基础时间）"""
     speed = config.train_running_speed if config else 1.0
+    base = config.running_base_time if config else 0
     x1, x2 = sta.x, stb.x
     y1, y2 = sta.y, stb.y
     d = round(((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5)
-    return max(1, round(d * speed))
+    return base + max(1, round(d * speed))
 
 
 def countTrainBoardingTime(station, config=None):

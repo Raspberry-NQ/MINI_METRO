@@ -271,7 +271,7 @@ SHUNTING    -<  (ALIGHTING)
 - `game_config.py`：日调度系统（day_length=300 ticks/天，7 时段，O-D 流量模式），类别颜色/标签，城市布局参数
 - `run.py`：setup() 改用城市生成器；_spawn_passengers_scheduled() 替代随机生成；getGameState() 增加时段信息/类别覆盖/乘客分布；AI 辅助方法（getUnconnectedStations/getCategoryCoverage/findNearestStation 等）
 - `visualizer.py`：站点类别底色、类别图例、时段显示、未连接站点警告
-- 动态站点生成已淡化（间隔 200，概率 0.3）
+- ~~动态站点生成已淡化（间隔 200，概率 0.3）~~
 
 ---
 
@@ -281,4 +281,6 @@ SHUNTING    -<  (ALIGHTING)
 
 AI 的核心挑战是：在游戏开始时就需要根据站点类别布局规划线路，后续根据日调度周期动态调车。AI 需要两层决策——**线路规划层**（低频，大改）和**调度层**（高频，微调）。
 
-详细见/AI
+20260417
+
+使用强化学习来训练调车ai，具体就用DQN网络结构。
