@@ -1,6 +1,8 @@
-# train.py
+# train.py — 列车模块
+#
+# 本文件定义了列车类及其状态管理，包括乘客上下车、运行、空闲、调车等状态。
 
-from external_functions import (
+from core.external_functions import (
     countTrainAlightingTime,
     countTrainBoardingTime,
     countTrainRunningTime,
@@ -25,7 +27,15 @@ trainStatusList = {
 
 
 class train:
+    """列车类，管理列车的状态和行为"""
+
     def __init__(self, number, config=None):
+        """初始化列车
+
+        参数:
+            number: 列车编号
+            config: 游戏配置对象，默认为None
+        """
         self.number = number
         self.config = config
         self.line = None  # None代表未放置
@@ -46,6 +56,11 @@ class train:
         self._waiting_before_departure = True  # True=等待出发(等前方空闲后setRunning), False=等待进站(等前方空闲后setAlighting)
 
     def __str__(self):
+        """返回列车的字符串表示
+
+        返回:
+            str: 列车信息字符串
+        """
         line_str = str(self.line.number) if self.line else "None"
         station_str = str(self.stationNow.id) if self.stationNow else "None"
         return (f"<TRAIN/ID:{self.number}/{trainStatusList[self.status]}"
@@ -55,10 +70,22 @@ class train:
                 f"/time:{self.nextStatusTime}/>")
 
     def connectCarriage(self, carriage):
+        """联挂车厢
+
+        参数:
+            carriage: 车厢对象
+        """
         self.carriageList.append(carriage)
 
     def disconnectCarriage(self, carriage):
-        """断开指定车厢"""
+        """断开指定车厢
+
+        参数:
+            carriage: 车厢对象
+
+        异常:
+            TrainError: 车厢不在列车上
+        """
         if carriage in self.carriageList:
             self.carriageList.remove(carriage)
         else:
@@ -70,6 +97,17 @@ class train:
     '''
 
     def setAlighting(self, station):
+        """设置落客状态
+
+        参数:
+            station: 到达站点对象
+
+        返回:
+            int: 落客状态持续时间
+
+        异常:
+            TrainError: 前状态不是running(4)
+        """
         if self.status != 4:
             raise TrainError(f"落客前状态不对,期望running(4),实际为{self.status}({trainStatusList[self.status]})")
         self.status = 1
@@ -79,6 +117,17 @@ class train:
         return self.nextStatusTime
 
     def setBoarding(self, station):
+        """设置上客状态
+
+        参数:
+            station: 当前站点对象
+
+        返回:
+            int: 上客状态持续时间
+
+        异常:
+            TrainError: 前状态不是alighting/idle/shunting
+        """
         if self.status not in (1, 3, 5):
             raise TrainError(f"上客前状态不对,期望alighting/idle/shunting,实际为{self.status}({trainStatusList[self.status]})")
         self.status = 2
@@ -88,6 +137,11 @@ class train:
         return self.nextStatusTime
 
     def setIdle(self):
+        """设置空闲状态
+
+        返回:
+            int: 空闲状态持续时间
+        """
         print("TRAIN ", self.number, "移入车库待命")
         self.status = 3
         self.stationNow = None
@@ -96,6 +150,17 @@ class train:
         return self.nextStatusTime
 
     def setRunning(self, nextStation):
+        """设置运行状态
+
+        参数:
+            nextStation: 下一站点对象
+
+        返回:
+            int: 运行状态持续时间
+
+        异常:
+            TrainError: 前状态不是boarding(2)
+        """
         if self.status != 2:
             raise TrainError(f"出站前状态不对,期望boarding(2),实际为{self.status}({trainStatusList[self.status]})")
         self.status = 4
@@ -107,11 +172,17 @@ class train:
     def setWaiting(self, nextStation, config=None, before_departure=True):
         """前方站被占用，进入等待状态。等待结束后重新检查是否可以出发。
 
-        Args:
+        参数:
             nextStation: 等待的目标站
-            config: GameConfig
+            config: GameConfig对象
             before_departure: True=出发前等待(等空闲后setRunning),
                               False=到达站外等待(等空闲后setAlighting)
+
+        返回:
+            int: 等待状态持续时间
+
+        异常:
+            TrainError: 前状态不是boarding(2)
         """
         if self.status != 2:
             raise TrainError(f"等待前状态不对,期望boarding(2),实际为{self.status}({trainStatusList[self.status]})")
@@ -124,6 +195,18 @@ class train:
         return self.nextStatusTime
 
     def setShunting(self, nextLine, arrival_station=None):
+        """设置调车状态
+
+        参数:
+            nextLine: 目标线路对象
+            arrival_station: 到达站点对象，默认为None
+
+        返回:
+            int: 调车状态持续时间
+
+        异常:
+            TrainError: 未设置waitShunting标志
+        """
         # 需要先进站落客再调车
         if not self.waitShunting:
             raise TrainError("调车前未设置waitShunting标志")
@@ -139,6 +222,7 @@ class train:
         return self.nextStatusTime
 
     def printTrain(self):
+        """打印列车详细信息"""
         print("车头编号:", self.number)
         print("车辆状态:", trainStatusList[self.status])
         if self.status in (4, 1, 2):

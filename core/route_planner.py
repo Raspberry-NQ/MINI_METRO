@@ -1,12 +1,22 @@
-# route_planner.py
+# route_planner.py — 路径规划模块
+#
+# 本文件实现了地铁网络的路径规划功能，使用Dijkstra算法寻找最优路径。
 
 import heapq
 from collections import defaultdict
-from external_functions import countTrainRunningTime
+from core.external_functions import countTrainRunningTime
 
 
 class RoutePlanner:
+    """路径规划器类，负责规划乘客的最优路径"""
+
     def __init__(self, metro_system, config=None):
+        """初始化路径规划器
+
+        参数:
+            metro_system: 地铁系统对象
+            config: 游戏配置对象，默认为None
+        """
         self.metro_system = metro_system
         self.config = config
         self.transfer_penalty = config.passenger_transfer_penalty if config else 5  # 换乘惩罚时间
@@ -17,9 +27,15 @@ class RoutePlanner:
         self.route_cache = {}
 
     def find_route(self, origin_station, destination_station, passenger_preference="fastest"):
-        """
-        寻找从起点到终点的最优路径
-        passenger_preference: "fastest" (最快), "least_transfer" (最少换乘), "balanced" (平衡)
+        """寻找从起点到终点的最优路径
+
+        参数:
+            origin_station: 起始站点对象
+            destination_station: 目的地站点对象
+            passenger_preference: 路径偏好，可选值："fastest"(最快), "least_transfer"(最少换乘), "balanced"(平衡)
+
+        返回:
+            list: 路径步骤列表，每步包含station、line、direction、transfer信息；或None（无法到达）
         """
         cache_key = (origin_station, destination_station, passenger_preference)
         if cache_key in self.route_cache:
@@ -40,7 +56,11 @@ class RoutePlanner:
         return route
 
     def _build_transit_graph(self):
-        """构建地铁网络图"""
+        """构建地铁网络图
+
+        返回:
+            dict: 图结构字典，{station: [edge_dict, ...]}
+        """
         graph = defaultdict(list)
 
         # 添加同一条线路内的连接
@@ -81,7 +101,14 @@ class RoutePlanner:
         return graph
 
     def _get_lines_at_station(self, station):
-        """获取经过指定站点的所有线路"""
+        """获取经过指定站点的所有线路
+
+        参数:
+            station: 站点对象
+
+        返回:
+            list: 线路对象列表
+        """
         lines = []
         for line in self.metro_system.metroLine:
             if station in line.stationList:
@@ -89,23 +116,68 @@ class RoutePlanner:
         return lines
 
     def _calculate_travel_time(self, station1, station2):
-        """计算两站之间的行驶时间"""
+        """计算两站之间的行驶时间
+
+        参数:
+            station1: 起始站点对象
+            station2: 目标站点对象
+
+        返回:
+            int: 行驶时间（tick数）
+        """
         return countTrainRunningTime(station1, station2, self.config)
 
     def _dijkstra_fastest(self, graph, start, end):
-        """Dijkstra算法 - 寻找最快路径"""
+        """Dijkstra算法 - 寻找最快路径
+
+        参数:
+            graph: 图结构
+            start: 起始站点
+            end: 目标站点
+
+        返回:
+            list: 路径步骤列表
+        """
         return self._dijkstra(graph, start, end, weight_func=lambda edge: edge['time'])
 
     def _dijkstra_least_transfer(self, graph, start, end):
-        """Dijkstra算法 - 寻找最少换乘路径"""
+        """Dijkstra算法 - 寻找最少换乘路径
+
+        参数:
+            graph: 图结构
+            start: 起始站点
+            end: 目标站点
+
+        返回:
+            list: 路径步骤列表
+        """
         return self._dijkstra(graph, start, end, weight_func=lambda edge: 1000 if edge['transfer'] else 1)
 
     def _dijkstra_balanced(self, graph, start, end):
-        """Dijkstra算法 - 平衡时间和换乘次数"""
+        """Dijkstra算法 - 平衡时间和换乘次数
+
+        参数:
+            graph: 图结构
+            start: 起始站点
+            end: 目标站点
+
+        返回:
+            list: 路径步骤列表
+        """
         return self._dijkstra(graph, start, end, weight_func=lambda edge: edge['time'] + (50 if edge['transfer'] else 0))
 
     def _dijkstra(self, graph, start, end, weight_func):
-        """通用Dijkstra算法实现"""
+        """通用Dijkstra算法实现
+
+        参数:
+            graph: 图结构
+            start: 起始站点
+            end: 目标站点
+            weight_func: 权重计算函数
+
+        返回:
+            list: 路径步骤列表，或None（无法到达）
+        """
         distances = {start: 0}
         previous = {}
         pq = [(0, 0, start)]  # (dist, seq, station) — seq 打破平局

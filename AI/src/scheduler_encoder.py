@@ -2,7 +2,14 @@
 
 import torch
 import numpy as np
-from game_config import GameConfig
+
+try:
+    from world.game_config import GameConfig
+except ImportError:
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    from world.game_config import GameConfig
 
 
 class SchedulerEncoder:
@@ -10,10 +17,15 @@ class SchedulerEncoder:
 
     编码方案:
       全局特征 (11 维)
-        + 每条线路特征 (7 条线 × 7 维 = 49 维)
-        + 每辆列车特征 (20 辆车 × 6 维 = 120 维)
+        + 每条线路特征 (max_lines 条线 × 7 维)
+        + 每辆列车特征 (max_trains 辆车 × 6 维)
         + 站点拥堵概要 (6 维: 每类别的最大候车数)
-      = 186 维
+
+    维度计算:
+      - AI训练配置 (max_lines=4, max_trains=8):
+        11 + 4×7 + 8×6 + 6 = 11 + 28 + 48 + 6 = 93 维
+      - 默认配置 (max_lines=7, max_trains=20):
+        11 + 7×7 + 20×6 + 6 = 11 + 49 + 120 + 6 = 186 维
     """
 
     PERIODS = ["night", "morning_rush", "morning", "midday",
@@ -29,7 +41,10 @@ class SchedulerEncoder:
         self.overcrowd_limit = config.overcrowd_limit
 
     def encode(self, state):
-        """输入: getGameState() 返回的字典, 输出: 一维张量 (186,)"""
+        """输入: getGameState() 返回的字典, 输出: 一维张量
+
+        维度: 11 + max_lines×7 + max_trains×6 + 6
+        """
         features = []
 
         # --- 1. 全局特征 (11 维) ---

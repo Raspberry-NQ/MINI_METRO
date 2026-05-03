@@ -2,10 +2,10 @@
 #
 # 用法:
 #   cd /Users/raspberry/developProject/MINI_METRO
-#   python -m AI.src.train_scheduler
+#   python -m ai.src.train_scheduler
 #
 # 或:
-#   python AI/src/train_scheduler.py
+#   python ai/src/train_scheduler.py
 
 import os
 import sys
@@ -21,18 +21,27 @@ if PROJECT_ROOT not in sys.path:
 
 import torch
 
-from ai_world import AIWorld
-from game_config import GameConfig
-from station import (
+from world.ai_world import AIWorld
+from world.game_config import GameConfig
+from core.station import (
     CATEGORY_RESIDENTIAL, CATEGORY_COMMERCIAL, CATEGORY_OFFICE,
     CATEGORY_SCHOOL, CATEGORY_HOSPITAL, CATEGORY_SCENIC,
 )
 
-from AI.src.scheduler_encoder import SchedulerEncoder
-from AI.src.action_space import ActionSpace
-from AI.src.dqn_agent import DQNAgent
-from AI.src.reward import RewardCalculator
-from AI.src.action_executor import ActionExecutor
+# 使用相对导入（当作为模块运行时）
+try:
+    from .scheduler_encoder import SchedulerEncoder
+    from .action_space import ActionSpace
+    from .dqn_agent import DQNAgent
+    from .reward import RewardCalculator
+    from .action_executor import ActionExecutor
+except ImportError:
+    # 如果相对导入失败，使用绝对导入
+    from ai.src.scheduler_encoder import SchedulerEncoder
+    from ai.src.action_space import ActionSpace
+    from ai.src.dqn_agent import DQNAgent
+    from ai.src.reward import RewardCalculator
+    from ai.src.action_executor import ActionExecutor
 
 
 # ============================================================
@@ -141,37 +150,60 @@ def rule_based_place_trains(world):
 # 训练循环
 # ============================================================
 
+# 全局的null文件，用于抑制输出
+_DEVNULL = open(os.devnull, 'w')
+
 class _SuppressPrint:
     """上下文管理器: 临时抑制 stdout 的 print 输出"""
     def __enter__(self):
         self._original_stdout = sys.stdout
-        sys.stdout = io.StringIO()
+        self._original_stderr = sys.stderr
+        sys.stdout = _DEVNULL
+        sys.stderr = _DEVNULL
         return self
-    def __exit__(self, *args):
+    def __exit__(self, exc_type, exc_val, exc_tb):
         sys.stdout = self._original_stdout
+        sys.stderr = self._original_stderr
+        # 强制flush
+        sys.stdout.flush()
+        sys.stderr.flush()
+        # 不抑制异常，让它们正常传播
+        return False
 
 
-def train_scheduler(num_episodes=5000):
+def train_scheduler(num_episodes=5000, config=None):
     """训练列车调度器
+
+    参数:
+        num_episodes: 训练的 episode 数量，默认为 5000
+        config: 游戏配置对象，如果为 None 则使用默认 AI 训练配置
 
     每个 episode = 一天 (1200 tick), 每 60 tick 决策一次, 共 20 步
     """
     # --- 初始化 ---
-    cfg = GameConfig.for_ai_training()
+    cfg = config if config is not None else GameConfig.for_ai_training()
     encoder = SchedulerEncoder(cfg)
     action_space = ActionSpace(max_lines=cfg.max_lines)
+
+    # 计算状态维度: 11 + max_lines×7 + max_trains×6 + 6
+    state_dim = 11 + cfg.max_lines * 7 + cfg.max_trains * 6 + 6
+
     agent = DQNAgent(
-        state_dim=186,
+        state_dim=state_dim,
         n_actions=action_space.n_actions,
     )
     executor = ActionExecutor(max_lines=cfg.max_lines)
     reward_calc = RewardCalculator(overcrowd_limit=cfg.overcrowd_limit)
 
     # checkpoint 目录
-    ckpt_dir = os.path.join(PROJECT_ROOT, "AI", "checkpoints")
+    ckpt_dir = os.path.join(PROJECT_ROOT, "ai", "checkpoints")
     os.makedirs(ckpt_dir, exist_ok=True)
 
     # 训练日志
+    log_file = os.path.join(PROJECT_ROOT, "training_log.txt")
+    log_f = open(log_file, 'w')
+    log_f.write("Episode,Avg_Reward,Survival_Rate,Avg_Arrived,Epsilon,Steps\n")
+
     episode_rewards = []
     episode_survived = []
     episode_arrived = []
@@ -181,53 +213,70 @@ def train_scheduler(num_episodes=5000):
     print(f"列车调度器训练开始")
     print(f"  episodes: {num_episodes}")
     print(f"  device: {agent.device}")
-    print(f"  state_dim: 186")
+    print(f"  state_dim: {state_dim}")
     print(f"  n_actions: {action_space.n_actions}")
     print(f"  day_length: {cfg.day_length} tick")
     print(f"  max_lines: {cfg.max_lines}")
     print(f"  max_trains: {cfg.max_trains}")
+    print(f"  max_ticks: {cfg.max_ticks_per_episode} tick (上限)")
+    print(f"  decision_interval: {cfg.decision_interval} tick")
     print(f"{'='*60}\n")
 
     start_time = time.time()
 
     for episode in range(num_episodes):
         # --- 1. 重置环境 ---
+        print(f"\nEpisode {episode+1}/{num_episodes} 初始化中...", end=" ", flush=True)
+
         with _SuppressPrint():
             world = AIWorld(cfg)
             world.setup()
             rule_based_build_lines(world)
-            initial_placements = rule_based_place_trains(world)
-            world.place_initial_trains(initial_placements)
+            # 不再放置初始列车，让AI从零开始学习调度
+            # initial_placements = rule_based_place_trains(world)
+            # world.place_initial_trains(initial_placements)
             world.lock_lines()
 
-        # --- 2. 运行一天 ---
-        # 记录天开始时的到达人数, 用于结算报告
-        start_arrived = world._count_arrived()
+        print("✓", flush=True)
 
+        # --- 2. 持续运行直到游戏结束或达到上限 ---
         reward_calc.reset()
         state_dict = world.getGameState()
         state_tensor = encoder.encode(state_dict)
         episode_reward = 0.0
         decision_step = 0
         last_action = 0  # 初始为不操作
+        episode_start_time = time.time()
 
-        # 手动 tick 循环 (而非用 run_one_day), 以便在每个决策步采集经验
-        # 抑制游戏引擎的调试输出
-        with _SuppressPrint():
-            for tick_in_day in range(cfg.day_length):
-                if world.game_over:
-                    break
+        # 持续运行，不再限制为一天
+        tick_count = 0
+        last_print_tick = 0
 
+        while not world.game_over and tick_count < cfg.max_ticks_per_episode:
+            # 抑制tick更新的输出
+            with _SuppressPrint():
                 world.updateOneTick()
+            tick_count += 1
 
-                # 每 60 tick 决策一次
-                if tick_in_day > 0 and tick_in_day % 60 == 0:
+            # 每 1000 tick 打印一次进度（此时stdout已恢复）
+            if tick_count - last_print_tick >= 1000:
+                elapsed = time.time() - episode_start_time
+                print(f"  Tick {tick_count}/{cfg.max_ticks_per_episode} "
+                      f"({tick_count/cfg.max_ticks_per_episode*100:.1f}%) "
+                      f"奖励: {episode_reward:.2f} "
+                      f"速度: {tick_count/max(elapsed,1):.1f} ticks/s", flush=True)
+                last_print_tick = tick_count
+
+                # 按配置的决策间隔进行决策
+            if tick_count > 0 and tick_count % cfg.decision_interval == 0:
+                # 决策时也抑制输出
+                with _SuppressPrint():
                     next_state_dict = world.getGameState()
                     next_state_tensor = encoder.encode(next_state_dict)
 
                     # 计算奖励
                     reward = reward_calc.compute(next_state_dict)
-                    done = world.game_over
+                    done = world.game_over or tick_count >= cfg.max_ticks_per_episode
 
                     # 存经验
                     agent.buffer.push(
@@ -251,14 +300,14 @@ def train_scheduler(num_episodes=5000):
                     state_tensor = next_state_tensor
                     state_dict = next_state_dict
                     last_action = action
-                    decision_step += 1
+                decision_step += 1
 
         # --- 3. Episode 结束 ---
-        # 读取结算报告
-        with _SuppressPrint():
-            report = world._day_summary(start_arrived, 0)
-        survived = report.get("survived", not world.game_over)
-        arrived = report.get("passengers_arrived_today", 0)
+        # 统计数据
+        final_state = world.getGameState()
+        metrics = final_state.get("metrics", {})
+        arrived = metrics.get("total_arrived", 0)
+        survived = not world.game_over
 
         episode_rewards.append(episode_reward)
         episode_survived.append(1 if survived else 0)
@@ -279,6 +328,10 @@ def train_scheduler(num_episodes=5000):
                   f"Epsilon: {agent.epsilon:.3f} | "
                   f"Steps: {agent.step_count} | "
                   f"Time: {elapsed:.0f}s")
+
+            # 写入日志
+            log_f.write(f"{episode+1},{avg_reward:.2f},{avg_survival:.1f},{avg_arrived:.1f},{agent.epsilon:.4f},{agent.step_count}\n")
+            log_f.flush()
 
         # 保存最佳模型
         if (episode + 1) % 50 == 0 and len(episode_rewards) >= 10:
@@ -304,6 +357,10 @@ def train_scheduler(num_episodes=5000):
     print(f"  总训练步数: {agent.step_count}")
     print(f"{'='*60}")
 
+    # 关闭日志文件
+    log_f.close()
+    print(f"训练日志已保存到: {log_file}")
+
     # 保存最终模型
     final_path = os.path.join(ckpt_dir, "scheduler_final.pt")
     agent.save(final_path)
@@ -316,44 +373,135 @@ def train_scheduler(num_episodes=5000):
 # 评估
 # ============================================================
 
-def evaluate_scheduler(agent_path=None, num_episodes=10):
-    """测试训练好的调度器"""
-    cfg = GameConfig.for_ai_training()
+def evaluate_scheduler(agent_path=None, num_episodes=10, max_decisions=50, config=None):
+    """测试训练好的调度器
+
+    参数:
+        agent_path: 模型文件路径
+        num_episodes: 评估的 episode 数量
+        max_decisions: 每个episode的最大决策次数（默认50次）
+        config: 游戏配置对象，如果为 None 则使用默认 AI 训练配置
+
+    说明:
+        每个 episode 运行最多 max_decisions 次决策，然后统计结果。
+        如果游戏提前结束（某站点乘客超过限制），也会停止。
+    """
+    cfg = config if config is not None else GameConfig.for_ai_training()
     encoder = SchedulerEncoder(cfg)
     action_space = ActionSpace(max_lines=cfg.max_lines)
     executor = ActionExecutor(max_lines=cfg.max_lines)
 
-    agent = DQNAgent(state_dim=186, n_actions=action_space.n_actions)
+    # 计算状态维度
+    state_dim = 11 + cfg.max_lines * 7 + cfg.max_trains * 6 + 6
+
+    agent = DQNAgent(state_dim=state_dim, n_actions=action_space.n_actions)
     if agent_path:
         agent.load(agent_path)
-    agent.epsilon = 0.0  # 关闭探索
+    agent.epsilon = 0.0  # 关闭探索，完全使用训练好的策略
 
     print(f"\n{'='*60}")
     print(f"评估调度器 ({num_episodes} episodes)")
+    print(f"运行模式: 每个episode最多{max_decisions}次决策")
     print(f"{'='*60}")
 
+    episode_results = []
+
     for ep in range(num_episodes):
+        # 初始化世界
         with _SuppressPrint():
             world = AIWorld(cfg)
             world.setup()
             rule_based_build_lines(world)
-            world.place_initial_trains(rule_based_place_trains(world))
+            # 不放置初始列车，让AI从零开始
             world.lock_lines()
 
-            def scheduler_callback(w, _encoder=encoder, _agent=agent,
-                                    _action_space=action_space, _executor=executor):
-                state_dict = w.getGameState()
-                state_tensor = _encoder.encode(state_dict).unsqueeze(0)
-                valid_mask = _action_space.get_valid_mask(state_dict)
-                action = _agent.select_action(state_tensor, valid_mask)
-                _executor.execute(action, w, state_dict)
+        # 持续运行直到游戏结束或达到决策上限
+        tick_count = 0
+        decision_step = 0
 
-            report = world.run_one_day(ai_callback=scheduler_callback)
+        while not world.game_over and decision_step < max_decisions:
+            # 更新一个tick
+            with _SuppressPrint():
+                world.updateOneTick()
+            tick_count += 1
 
-        print(f"\n--- Episode {ep+1} ---")
-        world.print_day_report(report)
+            # 按决策间隔进行AI调度
+            if tick_count > 0 and tick_count % cfg.decision_interval == 0:
+                with _SuppressPrint():
+                    state_dict = world.getGameState()
+                    state_tensor = encoder.encode(state_dict).unsqueeze(0)
+                    valid_mask = action_space.get_valid_mask(state_dict)
+                    action = agent.select_action(state_tensor, valid_mask)
+                    executor.execute(action, world, state_dict)
+                    decision_step += 1
+
+        # Episode结束，统计结果
+        # 获取最终统计
+        final_state = world.getGameState()
+        metrics = final_state.get("metrics", {})
+        arrived = metrics.get("total_arrived", 0)
+        total_waiting = metrics.get("total_waiting", 0)
+
+        # 找出最拥堵的站点
+        max_station = None
+        max_wait = 0
+        for s in world.stations:
+            if s.passengerNm > max_wait:
+                max_wait = s.passengerNm
+                max_station = s
+
+        result = {
+            "episode": ep + 1,
+            "ticks": tick_count,
+            "days": tick_count / cfg.day_length,
+            "arrived": arrived,
+            "decisions": decision_step,
+            "total_waiting": total_waiting,
+            "max_station_wait": max_wait,
+            "game_over": world.game_over,
+        }
+        episode_results.append(result)
+
+        # 简洁输出
+        status = "游戏结束" if world.game_over else f"达到决策上限({max_decisions}次)"
+        print(f"Episode {ep+1:2d}: {status} | "
+              f"决策{decision_step:2d}次 | "
+              f"tick {tick_count:4d} ({tick_count/cfg.day_length:.1f}天) | "
+              f"到达{arrived:3d}人 | "
+              f"等待{total_waiting:3d}人 | "
+              f"最大站{max_wait:2d}人")
+
+    # 打印汇总统计
+    print(f"\n{'='*60}")
+    print(f"评估汇总 ({num_episodes} episodes)")
+    print(f"{'='*60}")
+
+    avg_ticks = sum(r["ticks"] for r in episode_results) / len(episode_results)
+    avg_days = sum(r["days"] for r in episode_results) / len(episode_results)
+    avg_arrived = sum(r["arrived"] for r in episode_results) / len(episode_results)
+    avg_decisions = sum(r["decisions"] for r in episode_results) / len(episode_results)
+    avg_waiting = sum(r["total_waiting"] for r in episode_results) / len(episode_results)
+    avg_max_wait = sum(r["max_station_wait"] for r in episode_results) / len(episode_results)
+    game_over_count = sum(1 for r in episode_results if r["game_over"])
+
+    print(f"\n平均统计:")
+    print(f"  存活时间: {avg_ticks:.0f} tick ({avg_days:.1f} 天)")
+    print(f"  决策次数: {avg_decisions:.1f}")
+    print(f"  到达乘客: {avg_arrived:.1f}")
+    print(f"  等待乘客: {avg_waiting:.1f}")
+    print(f"  最大站候车: {avg_max_wait:.1f}")
+    print(f"  游戏结束: {game_over_count}/{num_episodes} 次")
+
+    print(f"\n各Episode详情:")
+    print(f"  Episode | 决策 | Tick  | 天数  | 到达 | 等待 | 最大站 | 状态")
+    print(f"  --------|------|-------|-------|------|------|--------|------")
+    for r in episode_results:
+        status = "结束" if r["game_over"] else "运行中"
+        print(f"  {r['episode']:7d} | {r['decisions']:4d} | {r['ticks']:5d} | {r['days']:5.1f} | {r['arrived']:4d} | {r['total_waiting']:4d} | {r['max_station_wait']:6d} | {status}")
 
     print(f"\n{'='*60}")
+
+    return episode_results
 
 
 # ============================================================
@@ -365,10 +513,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="列车调度器训练/评估")
     parser.add_argument("--eval", action="store_true", help="评估模式")
     parser.add_argument("--model", type=str, default=None, help="模型路径 (评估时用)")
-    parser.add_argument("--episodes", type=int, default=5000, help="训练 episode 数")
+    parser.add_argument("--episodes", type=int, default=5000, help="训练/评估 episode 数")
+    parser.add_argument("--max-decisions", type=int, default=50, help="评估时每个episode的最大决策次数 (默认50)")
     args = parser.parse_args()
 
     if args.eval:
-        evaluate_scheduler(agent_path=args.model, num_episodes=10)
+        evaluate_scheduler(agent_path=args.model, num_episodes=args.episodes, max_decisions=args.max_decisions)
     else:
         train_scheduler(num_episodes=args.episodes)

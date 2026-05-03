@@ -1,8 +1,11 @@
-# trainInventory.py
+# trainInventory.py — 列车库存管理模块
+#
+# 本文件负责管理所有列车和车厢的库存信息，包括空闲和忙碌状态的列车、
+# 列车调度、定时更新等功能。
 
-from train import train, TrainError, trainStatusList
-from carriage import carriage
-from timer_scheduler import TimerScheduler
+from core.train import train, TrainError, trainStatusList
+from core.carriage import carriage
+from core.timer_scheduler import TimerScheduler
 
 
 class ResourceError(Exception):
@@ -13,7 +16,14 @@ class ResourceError(Exception):
 class TrainInventory:
     """记录所有火车和车厢信息。train代表动力不载人车头,carriage代表无动力载人车厢"""
 
-    def __init__(self, passenger_manager=None, config=None):
+    def __init__(self, passenger_manager=None, config=None, debug=False):
+        """初始化列车库存
+
+        参数:
+            passenger_manager: 乘客管理器对象，默认为None
+            config: 游戏配置对象，默认为None
+            debug: 是否输出调试信息
+        """
         self.trainNm = 0
         self.carriageNm = 0
 
@@ -22,22 +32,33 @@ class TrainInventory:
         self.trainAbleList = []
         self.carriageAbleList = []
 
-        self.trainTimer = TimerScheduler()
+        self.trainTimer = TimerScheduler(debug=debug)
         self.passenger_manager = passenger_manager
         self.config = config
+        self.debug = debug
 
     def addTrain(self):
+        """添加新列车到空闲列表"""
         self.trainNm += 1
         newTrain = train(self.trainNm, self.config)
         self.trainAbleList.append(newTrain)
 
     def addCarriage(self):
+        """添加新车厢到空闲列表"""
         self.carriageNm += 1
         cap = self.config.carriage_capacity if self.config else 6
         newCarr = carriage(self.carriageNm, cap)
         self.carriageAbleList.append(newCarr)
 
     def getFreeTrain(self):
+        """从空闲列表获取列车
+
+        返回:
+            train: 空闲列车对象
+
+        异常:
+            ResourceError: 火车余额不足
+        """
         if len(self.trainAbleList) == 0:
             raise ResourceError("火车余额不足!(在getFreeTrain)")
         newtrain = self.trainAbleList[0]
@@ -46,6 +67,14 @@ class TrainInventory:
         return newtrain
 
     def getFreeCarriage(self):
+        """从空闲列表获取车厢
+
+        返回:
+            carriage: 空闲车厢对象
+
+        异常:
+            ResourceError: 车厢余额不足
+        """
         if len(self.carriageAbleList) == 0:
             raise ResourceError("车厢余额不足!(在getFreeCarriage)")
         newcarriage = self.carriageAbleList[0]
@@ -54,7 +83,13 @@ class TrainInventory:
         return newcarriage
 
     def employTrain(self, line, station, direction=True):
-        """移动列车到线路,进入上客状态"""
+        """移动列车到线路,进入上客状态
+
+        参数:
+            line: 目标线路对象
+            station: 上车站点对象
+            direction: 运行方向，True=正向, False=反向，默认为True
+        """
         train_obj = self.getFreeTrain()
         nca = self.getFreeCarriage()
         train_obj.connectCarriage(nca)
@@ -67,7 +102,14 @@ class TrainInventory:
         self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
 
     def shuntTrain(self, train_obj, goalLine, direction, station):
-        """将列车从当前线路调到目标线路（立即调车，列车已停在站上）"""
+        """将列车从当前线路调到目标线路（立即调车，列车已停在站上）
+
+        参数:
+            train_obj: 要调车的列车对象
+            goalLine: 目标线路对象
+            direction: 目标线路上的运行方向
+            station: 调车到达的站点对象
+        """
         # 强制乘客下车
         if self.passenger_manager:
             self.passenger_manager.force_alight_all(train_obj, station)
@@ -91,19 +133,25 @@ class TrainInventory:
         self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
 
     def updateAllTrain(self):
+        """更新所有列车状态
+
+        根据定时器触发的事件，更新列车状态。
+        """
         updateTrain, updateStatus = self.trainTimer.update(dt=1)
-        if len(updateTrain) != 0:
+        if self.debug and len(updateTrain) != 0:
             print('''           -------------
                     ！！！有更新！！！
                     ---------------''')
         for i in range(0, len(updateTrain)):
-            print(updateTrain[i])
-            print(updateStatus[i])
+            if self.debug:
+                print(updateTrain[i])
+                print(updateStatus[i])
 
             try:
                 self._update_single_train(updateTrain[i], updateStatus[i])
             except Exception as e:
-                print(f"[ERROR] 列车 {updateTrain[i].number} 更新出错(状态{updateStatus[i]}): {e}")
+                if self.debug:
+                    print(f"[ERROR] 列车 {updateTrain[i].number} 更新出错(状态{updateStatus[i]}): {e}")
                 # 尝试将出错列车置为 idle，避免后续卡死
                 try:
                     updateTrain[i].status = 3
@@ -113,20 +161,32 @@ class TrainInventory:
                     pass
 
     def _update_single_train(self, train_obj, status_code):
-        """处理单辆列车的状态转移，出错时不影响其他列车"""
+        """处理单辆列车的状态转移，出错时不影响其他列车
+
+        参数:
+            train_obj: 列车对象
+            status_code: 目标状态码
+        """
         if status_code == 1:  # 落客
             if train_obj.status != 4:
                 raise TrainError(f"前状态有误,期望running(4),实际为{train_obj.status}")
-            # 列车到站，先调用 nextStation 获取目标站（可能自动掉头）
+            # 列车到站，先调用 nextStation 获取目标站
             arrival_station = train_obj.line.nextStation(train_obj)
-            # 检查该站是否被同线路其他列车占用
-            if self._is_station_occupied_by_same_line(train_obj, arrival_station):
-                # 被占用，不能进站。将列车置于站外等待状态
-                train_obj.stationNow = arrival_station  # 列车已到达该站外
-                train_obj.status = 2  # 临时设为 boarding，以便 setWaiting 可以调用
-                dt = train_obj.setWaiting(arrival_station, self.config, before_departure=False)
-                self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
-                return
+
+            # 如果没有下一站，说明到达终点，需要掉头
+            if arrival_station is None:
+                # 掉头
+                if train_obj.line.turnAround(train_obj):
+                    # 重新获取下一站
+                    arrival_station = train_obj.line.nextStation(train_obj)
+                    if arrival_station is None:
+                        # 掉头后还是没有下一站，说明线路只有一个站或出错了
+                        print(f"⚠️  列车{train_obj.number}掉头后仍无下一站，线路可能只有一个站点")
+                        # 设置为空闲状态
+                        dt = train_obj.setIdle()
+                        self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
+                        return
+
             # 处理乘客下车
             if self.passenger_manager:
                 self.passenger_manager.process_passenger_alighting(train_obj)
@@ -139,37 +199,6 @@ class TrainInventory:
             if train_obj.status == 5 and train_obj._shunting_arrival_station:
                 train_obj.stationNow = train_obj._shunting_arrival_station
                 train_obj._shunting_arrival_station = None
-
-            # 如果是从 waiting 转来，说明前方站之前被占用，重新检查
-            if train_obj.status == 6:
-                # waiting 结束，重新检查是否可以进入下一站
-                train_obj.status = 2  # 临时恢复为 boarding 状态
-                waiting_target = train_obj._waiting_for_station
-                before_departure = train_obj._waiting_before_departure
-                train_obj._waiting_for_station = None
-
-                if before_departure:
-                    # 出发前等待：检查前方站是否仍被占用
-                    if train_obj.line and train_obj.line.isNextStationBlocked(train_obj):
-                        dt = train_obj.setWaiting(waiting_target, self.config, before_departure=True)
-                        self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
-                        return
-                    # 前方站已空闲，可以出发
-                    dt = train_obj.setRunning(waiting_target)
-                    self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
-                    return
-                else:
-                    # 到达站外等待：检查目标站是否仍被占用
-                    if self._is_station_occupied_by_same_line(train_obj, waiting_target):
-                        dt = train_obj.setWaiting(waiting_target, self.config, before_departure=False)
-                        self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
-                        return
-                    # 前方站已空闲，处理落客并进站
-                    if self.passenger_manager:
-                        self.passenger_manager.process_passenger_alighting(train_obj)
-                    dt = train_obj.setAlighting(waiting_target)
-                    self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
-                    return
 
             # 处理乘客上车
             if self.passenger_manager is None:
@@ -217,12 +246,28 @@ class TrainInventory:
                 # 列车正在运行但收到调车指令，等到达下一站后再调车
                 # 正常落客，在落客完成后（状态2）检查waitShunting
                 pass
+
             next_station = train_obj.line.nextStation(train_obj)
-            # 检查前方站是否被占用
-            if train_obj.line.isNextStationBlocked(train_obj):
-                dt = train_obj.setWaiting(next_station, self.config)
-                self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
-                return
+
+            # 如果没有下一站，说明到达终点，需要掉头
+            if next_station is None:
+                # 掉头
+                if train_obj.line.turnAround(train_obj):
+                    next_station = train_obj.line.nextStation(train_obj)
+                    if next_station is None:
+                        # 掉头后还是没有下一站，线路可能只有一个站点
+                        print(f"⚠️  列车{train_obj.number}无法找到下一站，设置为空闲")
+                        dt = train_obj.setIdle()
+                        self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
+                        return
+                else:
+                    # 无法掉头（不在终点站？）
+                    print(f"⚠️  列车{train_obj.number}无法掉头，设置为空闲")
+                    dt = train_obj.setIdle()
+                    self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
+                    return
+
+            # 正常运行
             dt = train_obj.setRunning(next_station)
             self.trainTimer.register(dt, train_obj, train_obj.nextStatus)
             return
@@ -231,6 +276,12 @@ class TrainInventory:
             raise TrainError(f"未知的nextStatus: {status_code}")
 
     def printInformation(self):
+        """打印库存信息
+
+        输出列车信息和乘客信息。
+        """
+        if not self.debug:
+            return
         print("车库信息->")
         print("车头数量", self.trainNm)
         for i in range(0, len(self.trainBusyList)):
@@ -247,8 +298,16 @@ class TrainInventory:
     def _is_station_occupied_by_same_line(self, train, station):
         """检查同一线路的其他列车是否已占据该站（非终点站时对向列车也算占用）
 
-        用于 running→alighting 转换时的检查。
-        running 状态的列车 stationNow 还是出发站，不算占用出发站。
+        参数:
+            train: 列车对象
+            station: 站点对象
+
+        返回:
+            bool: True表示被占用, False表示未被占用
+
+        说明:
+            用于 running→alighting 转换时的检查。
+            running 状态的列车 stationNow 还是出发站，不算占用出发站。
         """
         line = train.line
         if line is None or station is None:

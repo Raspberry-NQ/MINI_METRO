@@ -1,11 +1,21 @@
-# passengerManager.py
+# passengerManager.py — 乘客管理模块
+#
+# 本文件负责管理乘客的生成、上下车、路径规划等功能。
 
-from passenger import Passenger
-from route_planner import RoutePlanner
+from core.passenger import Passenger
+from core.route_planner import RoutePlanner
 
 
 class PassengerManager:
+    """乘客管理器类，负责管理所有乘客的生命周期"""
+
     def __init__(self, metro_system, config=None):
+        """初始化乘客管理器
+
+        参数:
+            metro_system: 地铁系统对象
+            config: 游戏配置对象，默认为None
+        """
         self.passenger_list = []
         self.passenger_id_counter = 0
         self.route_planner = RoutePlanner(metro_system, config)
@@ -13,7 +23,16 @@ class PassengerManager:
         self.config = config
 
     def generate_passenger(self, origin, destination, preference="fastest"):
-        """生成新乘客并规划路径"""
+        """生成新乘客并规划路径
+
+        参数:
+            origin: 起始站点对象
+            destination: 目的地站点对象
+            preference: 路径偏好，默认为"fastest"
+
+        返回:
+            Passenger: 新乘客对象, 或 None（无法找到路径）
+        """
         self.passenger_id_counter += 1
         passenger = Passenger(self.passenger_id_counter, origin, destination, preference)
         passenger.plan_route(self.route_planner)
@@ -28,7 +47,14 @@ class PassengerManager:
             return None
 
     def process_passenger_boarding(self, train):
-        """处理乘客上车"""
+        """处理乘客上车
+
+        参数:
+            train: 列车对象
+
+        返回:
+            list: 上车的乘客列表
+        """
         station = train.stationNow
         passengers_to_board = []
 
@@ -57,7 +83,14 @@ class PassengerManager:
         return passengers_to_board
 
     def process_passenger_alighting(self, train):
-        """处理乘客下车"""
+        """处理乘客下车
+
+        参数:
+            train: 列车对象
+
+        返回:
+            list: 下车的乘客列表
+        """
         passengers_to_alight = []
 
         for carriage in train.carriageList:
@@ -93,7 +126,15 @@ class PassengerManager:
         return passengers_to_alight
 
     def force_alight_all(self, train, station):
-        """调车时强制所有乘客下车"""
+        """调车时强制所有乘客下车
+
+        参数:
+            train: 列车对象
+            station: 站点对象
+
+        返回:
+            list: 下车的乘客列表
+        """
         passengers_to_alight = []
 
         for carriage in train.carriageList:
@@ -117,7 +158,9 @@ class PassengerManager:
         return passengers_to_alight
 
     def update_all_passengers(self):
-        """更新所有乘客状态"""
+        """更新所有乘客状态
+
+        更新所有乘客的等待时间。
+        """
         for passenger in self.passenger_list[:]:
             passenger.update_waiting_time()
-

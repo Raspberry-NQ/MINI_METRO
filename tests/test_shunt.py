@@ -41,13 +41,13 @@ class RPStub:
 rp.RoutePlanner = RPStub
 sys.modules['route_planner'] = rp
 
-from station import station
-from carriage import carriage
-from train import train
-from line import MetroLine
-from trainInventory import TrainInventory
-from passengerManager import PassengerManager
-from passenger import Passenger
+from core.station import station
+from core.carriage import carriage
+from core.train import train
+from core.line import MetroLine
+from core.trainInventory import TrainInventory
+from core.passengerManager import PassengerManager
+from core.passenger import Passenger
 
 passed = 0
 failed = 0
@@ -447,7 +447,7 @@ def t():
     tr1.connectCarriage(ti.getFreeCarriage())
 
     # 在 tr1 的第二节车厢放乘客
-    from passenger import Passenger as P
+    from core.passenger import Passenger as P
     c = tr1.carriageList[1]
     p = P.__new__(P)
     p.status = "on_train"; p.current_station = None

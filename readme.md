@@ -4,16 +4,65 @@
 
 ## 项目结构
 
-- 根目录: 包含所有核心模块的源代码文件
-- `tests/` 目录: 包含所有测试文件
+```
+MINI_METRO/
+├── core/                      # 核心游戏逻辑
+│   ├── station.py            # 站点类
+│   ├── line.py               # 线路类
+│   ├── train.py              # 列车类
+│   ├── carriage.py           # 车厢类
+│   ├── passenger.py          # 乘客类
+│   ├── passengerManager.py   # 乘客管理器
+│   ├── trainInventory.py     # 列车库存管理
+│   ├── timer_scheduler.py    # 定时调度器
+│   ├── route_planner.py      # 路径规划器
+│   └── external_functions.py # 外部函数
+│
+├── world/                     # 世界运行文件
+│   ├── world.py              # 基础世界类
+│   ├── run.py                # 地铁世界运行
+│   ├── ai_world.py           # AI训练世界
+│   ├── game_config.py        # 游戏配置
+│   └── city_generator.py     # 城市生成器
+│
+├── ai/                        # AI设计文件
+│   ├── src/                   # AI源码
+│   │   ├── action_executor.py
+│   │   ├── action_space.py
+│   │   ├── dqn_agent.py
+│   │   ├── dueling_dqn.py
+│   │   ├── replay_buffer.py
+│   │   ├── reward.py
+│   │   ├── scheduler_encoder.py
+│   │   └── train_scheduler.py
+│   └── checkpoints/           # AI模型检查点
+│
+├── game/                      # 可运行的游戏文件
+│   ├── main.py               # 游戏入口
+│   └── visualizer.py         # 可视化渲染器
+│
+└── tests/                     # 测试文件
+    ├── test_all.py
+    ├── test_shunt.py
+    └── test_passenger_alight.py
+```
 
 ## 程序说明
 
 系统分为两部分：
 
-1.地铁模拟系统，通过自动生成乘客、站点和自动运行的列车在模拟系统里运行
+1. 地铁模拟系统，通过自动生成乘客、站点和自动运行的列车在模拟系统里运行
 
-2.AI调度系统，基于条件规划和机器学习
+2. AI调度系统，基于条件规划和机器学习
+
+### AI训练资源配置
+
+AI训练世界使用以下资源配置：
+- **最大线路数**: 4条
+- **最大列车数**: 8辆
+- **最大车厢数**: 8个
+- **游戏结束条件**: 当任何站点等待乘客超过50人时游戏结束
+- **初始资源**: 世界初始化时一次性给齐所有列车和车厢，AI需自行决定如何分配
 
 20260418 AI暂时还只支持给定最终地图的调度
 
@@ -26,29 +75,49 @@
 
 ## 文件说明
 
-### 核心模块
+### 核心模块 (core/)
 
-- `main.py` - 初始化一个小的世界进行演示
-- `run.py` - 完整的游戏运行器，使用城市生成器创建初始站点，包含玩家操作接口和观察接口，使用参数 `--visual` 进入可视化模式
-- `visualizer.py` - pygame 可视化模块
-- `world.py` - 游戏世界类，管理站点、线路和整体游戏状态
-- `game_config.py` - 游戏配置类，集中管理所有可调参数（站点类别、日调度乘客生成、资源增长、时间计算、可视化等）
 - `station.py` - 站点类，表示地铁站的信息和状态，支持功能类别（居民区/商业区/办公区/医院/景区/学校）
-- `city_generator.py` - 城市生成器，按类别聚集生成初始城市站点布局
+- `line.py` - 线路类，管理地铁线路和站点关系，支持动态添加/插入/移除站点
 - `train.py` - 列车类，管理列车状态、车厢和运行逻辑
 - `carriage.py` - 车厢类，表示载客的车厢
-- `line.py` - 线路类，管理地铁线路和站点关系，支持动态添加/插入/移除站点
 - `passenger.py` - 乘客类，管理乘客状态、路径规划和行为
 - `passengerManager.py` - 乘客管理器，负责生成乘客和处理上下车逻辑
 - `trainInventory.py` - 列车库存管理器，管理所有列车和车厢资源
 - `route_planner.py` - 路径规划器，为乘客计算最优路径
 - `timer_scheduler.py` - 定时调度器，管理列车状态转换的定时事件
-- `external_functions.py` - 外部函数模块，包含各种时间计算函数，支持 GameConfig 参数
+- `external_functions.py` - 外部函数模块，包含各种时间计算函数
 
-### 测试文件
+### 世界运行模块 (world/)
 
-- `tests/test_all.py` - 综合测试所有模块功能
-- `tests/test_shunt.py` - 专门测试调车功能
+- `world.py` - 游戏世界类，管理站点、线路和整体游戏状态
+- `run.py` - 完整的游戏运行器，使用城市生成器创建初始站点，包含玩家操作接口和观察接口
+- `ai_world.py` - AI训练专用世界，一次性生成所有资源，支持日调度运行
+- `game_config.py` - 游戏配置类，集中管理所有可调参数（站点类别、日调度乘客生成、资源增长、时间计算、可视化等）
+- `city_generator.py` - 城市生成器，按类别聚集生成初始城市站点布局
+
+### AI模块 (ai/)
+
+- `src/action_executor.py` - 动作执行器，将动作编号翻译成游戏操作
+- `src/action_space.py` - 动作空间定义
+- `src/dqn_agent.py` - DQN智能体
+- `src/dueling_dqn.py` - Dueling DQN网络结构
+- `src/replay_buffer.py` - 经验回放缓冲区
+- `src/reward.py` - 奖励计算器
+- `src/scheduler_encoder.py` - 状态编码器
+- `src/train_scheduler.py` - 列车调度器训练脚本
+- `checkpoints/` - AI模型检查点目录
+
+### 游戏运行模块 (game/)
+
+- `main.py` - 游戏入口，初始化一个小的世界进行演示
+- `visualizer.py` - pygame可视化模块
+
+### 测试文件 (tests/)
+
+- `test_all.py` - 综合测试所有模块功能
+- `test_shunt.py` - 专门测试调车功能
+- `test_passenger_alight.py` - 测试乘客下车/换乘逻辑
 
 ## 用户操作指南
 
@@ -56,19 +125,29 @@
 
 1. 运行简单演示世界：
    ```bash
-   python main.py
+   python game/main.py
    ```
 
 2. 运行完整游戏（文本模式）（unfinished）：
    ```bash
-   python run.py
+   python -m world.run
    ```
 
 3. 运行可视化游戏（推荐）：
    ```bash
-   python run.py --visual
+   python -m world.run --visual
    ```
    依赖：`pip install pygame`
+
+### 运行AI训练
+
+```bash
+# 训练AI调度器
+python -m ai.src.train_scheduler --episodes 5000
+
+# 评估训练好的模型
+python -m ai.src.train_scheduler --eval --model ai/checkpoints/best_scheduler.pt
+```
 
 ### 运行测试
 
@@ -76,6 +155,7 @@
 # 运行所有测试
 python tests/test_all.py
 python tests/test_shunt.py
+python tests/test_passenger_alight.py
 ```
 
 ## 游戏更新机制
@@ -147,7 +227,7 @@ python tests/test_shunt.py
 
 *20260422 需要修正延伸逻辑*
 
-运行 `python run.py --visual` 进入图形化界面，支持以下操作：
+运行 `python -m world.run --visual` 进入图形化界面，支持以下操作：
 
 | 按键/鼠标 | 功能 |
 |---|---|

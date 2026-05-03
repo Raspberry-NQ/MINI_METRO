@@ -7,15 +7,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 # ============================================================
 # 缺失依赖 stub
 # ============================================================
-ef = types.ModuleType('external_functions')
+ef = types.ModuleType('core.external_functions')
 ef.countTrainAlightingTime = lambda train, config=None: 2
 ef.countTrainBoardingTime = lambda station, config=None: 3
 ef.countTrainRunningTime = lambda s1, s2, config=None: 5
 ef.countTrainIdleTime = lambda config=None: 1
 ef.countTrainShuntingime = lambda line, nextLine, config=None: 4
-sys.modules['external_functions'] = ef
+sys.modules['core.external_functions'] = ef
 
-ts = types.ModuleType('timer_scheduler')
+ts = types.ModuleType('core.timer_scheduler')
 class TimerSchedulerStub:
     def __init__(self):
         self.events = []
@@ -24,18 +24,18 @@ class TimerSchedulerStub:
     def update(self, dt=1):
         return [], []
 ts.TimerScheduler = TimerSchedulerStub
-sys.modules['timer_scheduler'] = ts
+sys.modules['core.timer_scheduler'] = ts
 
 # route_planner.py now exists, no need for stub
 
 # ============================================================
-from station import station
-from passenger import Passenger
-from carriage import carriage
-from train import train
-from line import MetroLine
-from passengerManager import PassengerManager
-from trainInventory import TrainInventory
+from core.station import station
+from core.passenger import Passenger
+from core.carriage import carriage
+from core.train import train
+from core.line import MetroLine
+from core.passengerManager import PassengerManager
+from core.trainInventory import TrainInventory
 
 # ============================================================
 passed = 0

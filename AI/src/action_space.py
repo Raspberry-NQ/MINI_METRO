@@ -1,6 +1,6 @@
 # action_space.py — 调度器动作空间定义
 
-from game_config import GameConfig
+from world.game_config import GameConfig
 
 
 class ActionSpace:

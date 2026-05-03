@@ -41,13 +41,13 @@ class RPStub:
 rp.RoutePlanner = RPStub
 sys.modules['route_planner'] = rp
 
-from station import station
-from carriage import carriage
-from train import train
-from line import MetroLine
-from trainInventory import TrainInventory
-from passengerManager import PassengerManager
-from passenger import Passenger
+from core.station import station
+from core.carriage import carriage
+from core.train import train
+from core.line import MetroLine
+from core.trainInventory import TrainInventory
+from core.passengerManager import PassengerManager
+from core.passenger import Passenger
 
 passed = 0
 failed = 0

@@ -1,6 +1,9 @@
-# game_config.py — 集中管理所有可调游戏参数
+# game_config.py — 游戏配置模块
+#
+# 本文件集中管理所有可调游戏参数，包括拥堵限制、站点类别、乘客生成、
+# 资源增长、列车参数、时间计算、可视化等配置。
 
-from station import (
+from core.station import (
     CATEGORY_RESIDENTIAL, CATEGORY_COMMERCIAL, CATEGORY_OFFICE,
     CATEGORY_HOSPITAL, CATEGORY_SCENIC, CATEGORY_SCHOOL,
     CATEGORY_SHAPE_MAP, ALL_CATEGORIES,
@@ -8,9 +11,10 @@ from station import (
 
 
 class GameConfig:
-    """游戏配置，所有数值均可调整"""
+    """游戏配置类，所有数值均可调整"""
 
     def __init__(self):
+        """初始化游戏配置，设置所有默认参数值"""
         # ---- 拥堵 ----
         self.overcrowd_limit = 15  # 站点人数超过此值则游戏结束
 
@@ -130,6 +134,7 @@ class GameConfig:
         self.max_lines = 7
         self.max_trains = 15
         self.max_carriages = 30
+        self.max_trains_per_line = 999  # 每条线路最多列车数（实际无限制）
 
         # ---- 列车/车厢 ----
         self.carriage_capacity = 6
@@ -198,14 +203,20 @@ class GameConfig:
 
     @classmethod
     def for_ai_training(cls):
-        """生成 AI 训练专用配置
+        """生成AI训练专用配置
 
-        关键改动:
-        - day_length=1200 (20小时 × 60 tick/时, 1 tick ≈ 1 分钟)
-        - running_base_time=8 (两站间基础运行 8 tick ≈ 8 分钟，贴近现实)
-        - carriage_capacity=30 (更大容量，对应更长的列车)
-        - 禁用动态站点和资源增长（AI 世界一次性给齐）
-        - 同线路最多 2 辆车同时运营（防止拥堵）
+        返回:
+            GameConfig: AI训练专用配置对象
+
+        说明:
+            关键改动:
+            - day_length=1200 (20小时 × 60 tick/时, 1 tick ≈ 1 分钟)
+            - running_base_time=8 (两站间基础运行 8 tick ≈ 8 分钟，贴近现实)
+            - carriage_capacity=30 (更大容量，对应更长的列车)
+            - 禁用动态站点和资源增长（AI 世界一次性给齐）
+            - 同线路最多 2 辆车同时运营（防止拥堵）
+            - 资源上限: 最多4条线路, 8辆列车, 8个车厢
+            - 游戏结束条件: 站点等待乘客过多
         """
         cfg = cls()
         # ---- 时间: 1 tick ≈ 1 分钟 ----
@@ -220,7 +231,7 @@ class GameConfig:
         cfg.shunting_same_line_time = 15
         cfg.shunting_diff_line_time = 30
         cfg.shunting_no_line_time = 30
-        cfg.train_wait_time = 5
+        cfg.train_wait_time = 20  # 增加等待时间，避免频繁重试导致死锁
         cfg.passenger_transfer_penalty = 10
 
         # ---- 站点: 一次性生成 ----
@@ -230,18 +241,22 @@ class GameConfig:
         # ---- 列车/车厢 ----
         cfg.carriage_capacity = 30
         cfg.default_carriages_per_train = 2
-        cfg.max_lines = 7
-        cfg.max_trains = 20
-        cfg.max_carriages = 40
+        cfg.max_lines = 4  # 最多4条线路
+        cfg.max_trains = 8  # 最多8辆列车
+        cfg.max_carriages = 8  # 最多8个车厢
 
         # ---- 资源: 禁用渐进增长 ----
         cfg.resource_growth_schedule = []
 
         # ---- 同线路列车上限 ----
-        cfg.max_trains_per_line = 2
+        cfg.max_trains_per_line = 999  # 每条线路最多列车数（实际无限制）
 
         # ---- 拥堵 ----
-        cfg.overcrowd_limit = 50
+        cfg.overcrowd_limit = 50  # 站点等待乘客超过50人则游戏结束
+
+        # ---- AI训练运行参数 ----
+        cfg.max_ticks_per_episode = 999999  # 无tick上限，直到站点爆满才结束
+        cfg.decision_interval = 60  # AI决策间隔（tick数），可方便调整
 
         # ---- 乘客生成率 ----
         # 经测试，之前的 rate 过低 (1200 tick 仅生成 1-2 个乘客)
@@ -259,7 +274,14 @@ class GameConfig:
         return cfg
 
     def get_current_period(self, tick):
-        """根据 tick 返回当前时段名称"""
+        """根据tick返回当前时段名称
+
+        参数:
+            tick: 当前游戏tick数
+
+        返回:
+            str: 时段名称
+        """
         time_in_day = (tick % self.day_length) / self.day_length
         for start, end, period_name in self.daily_periods:
             if start <= time_in_day < end:
@@ -267,8 +289,13 @@ class GameConfig:
         return "night"
 
     def get_od_weights(self, tick):
-        """返回当前 tick 的活跃 O-D 权重列表
-        Returns: [(origin_cat, dest_cat, weight), ...]
+        """返回当前tick的活跃O-D权重列表
+
+        参数:
+            tick: 当前游戏tick数
+
+        返回:
+            list: [(origin_cat, dest_cat, weight), ...] O-D权重列表
         """
         period = self.get_current_period(tick)
         result = []
@@ -278,6 +305,13 @@ class GameConfig:
         return result
 
     def get_spawn_rate(self, tick):
-        """返回当前 tick 的乘客生成率"""
+        """返回当前tick的乘客生成率
+
+        参数:
+            tick: 当前游戏tick数
+
+        返回:
+            float: 乘客生成率
+        """
         period = self.get_current_period(tick)
         return self.period_base_spawn_rate.get(period, 0.05)

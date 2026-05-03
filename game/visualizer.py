@@ -1,17 +1,27 @@
-# visualizer.py — 基于 pygame 的迷你地铁可视化
+# visualizer.py — 迷你地铁可视化模块
+#
+# 本文件实现了基于pygame的迷你地铁可视化渲染器，包括站点、线路、列车、乘客、HUD等的绘制。
 
 import pygame
 import sys
 import math
 import io
-from external_functions import countTrainRunningTime
-from station import CATEGORY_LABEL_CN
+from core.external_functions import countTrainRunningTime
+from core.station import CATEGORY_LABEL_CN
 
 # 站点形状 → 绘制函数 映射
 SHAPE_DRAWERS = {}
 
 
 def _register_shape(name):
+    """装饰器：注册形状绘制函数
+
+    参数:
+        name: 形状名称
+
+    返回:
+        function: 装饰器函数
+    """
     def decorator(fn):
         SHAPE_DRAWERS[name] = fn
         return fn
@@ -22,11 +32,31 @@ def _register_shape(name):
 
 @_register_shape("circle")
 def _draw_circle(surface, cx, cy, r, color, width=0):
+    """绘制圆形
+
+    参数:
+        surface: pygame surface对象
+        cx: 圆心x坐标
+        cy: 圆心y坐标
+        r: 半径
+        color: 颜色
+        width: 线宽，0表示填充
+    """
     pygame.draw.circle(surface, color, (cx, cy), r, width)
 
 
 @_register_shape("triangle")
 def _draw_triangle(surface, cx, cy, r, color, width=0):
+    """绘制三角形
+
+    参数:
+        surface: pygame surface对象
+        cx: 中心x坐标
+        cy: 中心y坐标
+        r: 半径
+        color: 颜色
+        width: 线宽，0表示填充
+    """
     pts = [
         (cx, cy - r),
         (cx - r * math.sin(math.pi / 3), cy + r * 0.5),
@@ -37,6 +67,16 @@ def _draw_triangle(surface, cx, cy, r, color, width=0):
 
 @_register_shape("square")
 def _draw_square(surface, cx, cy, r, color, width=0):
+    """绘制正方形
+
+    参数:
+        surface: pygame surface对象
+        cx: 中心x坐标
+        cy: 中心y坐标
+        r: 半径
+        color: 颜色
+        width: 线宽，0表示填充
+    """
     half = r * 0.75
     rect = pygame.Rect(cx - half, cy - half, half * 2, half * 2)
     pygame.draw.rect(surface, color, rect, width)
@@ -44,12 +84,32 @@ def _draw_square(surface, cx, cy, r, color, width=0):
 
 @_register_shape("diamond")
 def _draw_diamond(surface, cx, cy, r, color, width=0):
+    """绘制菱形
+
+    参数:
+        surface: pygame surface对象
+        cx: 中心x坐标
+        cy: 中心y坐标
+        r: 半径
+        color: 颜色
+        width: 线宽，0表示填充
+    """
     pts = [(cx, cy - r), (cx + r * 0.7, cy), (cx, cy + r), (cx - r * 0.7, cy)]
     pygame.draw.polygon(surface, color, pts, width)
 
 
 @_register_shape("star")
 def _draw_star(surface, cx, cy, r, color, width=0):
+    """绘制星形
+
+    参数:
+        surface: pygame surface对象
+        cx: 中心x坐标
+        cy: 中心y坐标
+        r: 半径
+        color: 颜色
+        width: 线宽，0表示填充
+    """
     pts = []
     for i in range(10):
         angle = math.pi / 2 + i * math.pi / 5
@@ -60,6 +120,16 @@ def _draw_star(surface, cx, cy, r, color, width=0):
 
 @_register_shape("pentagon")
 def _draw_pentagon(surface, cx, cy, r, color, width=0):
+    """绘制五边形
+
+    参数:
+        surface: pygame surface对象
+        cx: 中心x坐标
+        cy: 中心y坐标
+        r: 半径
+        color: 颜色
+        width: 线宽，0表示填充
+    """
     pts = []
     for i in range(5):
         angle = math.pi / 2 + i * 2 * math.pi / 5
@@ -68,6 +138,17 @@ def _draw_pentagon(surface, cx, cy, r, color, width=0):
 
 
 def draw_shape(surface, shape_type, cx, cy, r, color, width=0):
+    """通用形状绘制函数
+
+    参数:
+        surface: pygame surface对象
+        shape_type: 形状类型
+        cx: 中心x坐标
+        cy: 中心y坐标
+        r: 半径
+        color: 颜色
+        width: 线宽，0表示填充
+    """
     drawer = SHAPE_DRAWERS.get(shape_type)
     if drawer:
         drawer(surface, cx, cy, r, color, width)
@@ -78,13 +159,29 @@ def draw_shape(surface, shape_type, cx, cy, r, color, width=0):
 # ---- 乘客小形状绘制 (缩小版) ----
 
 def draw_passenger_shape(surface, shape_type, cx, cy, r, color):
+    """绘制乘客小形状
+
+    参数:
+        surface: pygame surface对象
+        shape_type: 形状类型
+        cx: 中心x坐标
+        cy: 中心y坐标
+        r: 半径
+        color: 颜色
+    """
     draw_shape(surface, shape_type, int(cx), int(cy), int(r), color)
 
 
 class Visualizer:
-    """迷你地铁的可视化渲染器"""
+    """迷你地铁的可视化渲染器类"""
 
     def __init__(self, world, config=None):
+        """初始化可视化渲染器
+
+        参数:
+            world: 游戏世界对象
+            config: 游戏配置对象，默认为None
+        """
         self.world = world
         self.config = config or world.config
 
@@ -115,7 +212,7 @@ class Visualizer:
 
         # 选中的站点 (用于线路编辑)
         self.selected_stations = []
-        self.selected_line = None
+        self.selected_line = None  # 选中的线路对象
         self.hover_station = None
 
         # 线路颜色缓存
@@ -136,12 +233,21 @@ class Visualizer:
         self._game_over_shown = False
 
     def _rebuild_line_colors(self):
+        """重建线路颜色映射"""
         self._line_color_map.clear()
         colors = self.config.line_colors
         for i, line in enumerate(self.world.metroLine):
             self._line_color_map[line.number] = colors[i % len(colors)]
 
     def get_line_color(self, line_number):
+        """获取线路颜色
+
+        参数:
+            line_number: 线路编号
+
+        返回:
+            tuple: RGB颜色值
+        """
         if line_number not in self._line_color_map:
             self._rebuild_line_colors()
         return self._line_color_map.get(line_number, (150, 150, 150))
@@ -149,11 +255,29 @@ class Visualizer:
     # ---- 坐标变换 ----
 
     def world_to_screen(self, wx, wy):
+        """将世界坐标转换为屏幕坐标
+
+        参数:
+            wx: 世界x坐标
+            wy: 世界y坐标
+
+        返回:
+            tuple: (屏幕x坐标, 屏幕y坐标)
+        """
         sx = int(wx * self.zoom + self.offset_x)
         sy = int(-wy * self.zoom + self.offset_y)  # y 轴翻转
         return sx, sy
 
     def screen_to_world(self, sx, sy):
+        """将屏幕坐标转换为世界坐标
+
+        参数:
+            sx: 屏幕x坐标
+            sy: 屏幕y坐标
+
+        返回:
+            tuple: (世界x坐标, 世界y坐标)
+        """
         wx = (sx - self.offset_x) / self.zoom
         wy = -(sy - self.offset_y) / self.zoom
         return wx, wy
@@ -161,6 +285,7 @@ class Visualizer:
     # ---- 主绘制 ----
 
     def draw(self):
+        """主绘制函数，绘制所有可视化元素"""
         self.screen.fill(self.config.bg_color)
         self._draw_lines()
         self._draw_stations()
@@ -177,19 +302,27 @@ class Visualizer:
     # ---- 线路绘制 ----
 
     def _draw_lines(self):
+        """绘制所有线路"""
         cfg = self.config
         for line in self.world.metroLine:
             if len(line.stationList) < 2:
                 continue
             color = self.get_line_color(line.number)
+
+            # 如果是选中的线路，加粗显示
+            width = cfg.line_width
+            if line is self.selected_line:
+                width = cfg.line_width + 4
+
             pts = []
             for s in line.stationList:
                 pts.append(self.world_to_screen(s.x, s.y))
-            pygame.draw.lines(self.screen, color, False, pts, cfg.line_width)
+            pygame.draw.lines(self.screen, color, False, pts, width)
 
     # ---- 站点绘制 ----
 
     def _draw_stations(self):
+        """绘制所有站点"""
         cfg = self.config
         limit = cfg.overcrowd_limit
         r = int(cfg.station_radius * self.zoom)
@@ -237,7 +370,14 @@ class Visualizer:
             self.screen.blit(id_surf, (sx - id_surf.get_width() // 2, sy + r + 4))
 
     def _draw_station_passengers(self, station, sx, sy, r):
-        """在站点周围绘制等候乘客的目标形状"""
+        """在站点周围绘制等候乘客的目标形状
+
+        参数:
+            station: 站点对象
+            sx: 屏幕x坐标
+            sy: 屏幕y坐标
+            r: 站点半径
+        """
         cfg = self.config
         p_size = max(3, int(cfg.passenger_size * self.zoom))
 
@@ -269,6 +409,7 @@ class Visualizer:
     # ---- 列车绘制 ----
 
     def _draw_trains(self):
+        """绘制所有列车"""
         cfg = self.config
         for train in self.world.ti.trainBusyList:
             if train.line is None:
@@ -310,7 +451,14 @@ class Visualizer:
             self.screen.blit(car_text, (tx + size + 2, ty - car_text.get_height() // 2))
 
     def _compute_train_position(self, train):
-        """计算列车在屏幕上的位置，支持运行中的插值"""
+        """计算列车在屏幕上的位置，支持运行中的插值
+
+        参数:
+            train: 列车对象
+
+        返回:
+            tuple: (屏幕x坐标, 屏幕y坐标), 或 None
+        """
         if train.status == 5:  # shunting — 不在站点
             return None
         if train.stationNow is None:
@@ -346,6 +494,7 @@ class Visualizer:
     # ---- HUD ----
 
     def _draw_hud(self):
+        """绘制HUD信息面板"""
         cfg = self.config
         state = self.world.getGameState()
         metrics = state["metrics"]
@@ -363,6 +512,13 @@ class Visualizer:
         }.get(period, period)
         self._hud_text(f"Tick: {state['tick']}  Day {state['tick'] // cfg.day_length + 1} {period_cn}", 10, y); y += 22
         self._hud_text(f"Speed: x{self.sim_speed}  {'(||)' if self.paused else '(>)'}", 10, y); y += 22
+
+        # 显示选中的线路
+        if self.selected_line:
+            line_color = self.get_line_color(self.selected_line.number)
+            self._hud_text(f"Selected Line: {self.selected_line.number} (trains: {self.selected_line.trainNm})", 10, y, color=line_color)
+            y += 22
+
         self._hud_text(f"Stations: {len(state['stations'])}  Lines: {len(state['lines'])}  Trains: {len(state['trains'])}", 10, y); y += 22
 
         # 拥堵警告
@@ -412,10 +568,19 @@ class Visualizer:
 
         # 底部: 操作提示
         bottom_y = cfg.window_height - 30
-        help_text = "[Space] Pause  [+/-] Speed  [Scroll] Zoom  [Drag] Pan  [L] New line  [E] Extend line  [T] Add train  [C] Add carriage  [R-click] Quick connect  [R] Reset view"
+        help_text = "[Space] Pause  [+/-] Speed  [Scroll] Zoom  [Drag] Pan  [1-9] Select line  [L] New line  [E] Extend line  [T] Add train  [C] Add carriage  [R-click] Quick connect  [R] Reset view"
         self._hud_text(help_text, 10, bottom_y, font=self.font_small, color=(120, 120, 120))
 
     def _hud_text(self, text, x, y, font=None, color=None):
+        """绘制HUD文本
+
+        参数:
+            text: 文本内容
+            x: x坐标
+            y: y坐标
+            font: 字体对象，默认为None
+            color: 颜色，默认为None
+        """
         font = font or self.font
         color = color or self.config.text_color
         surf = font.render(text, True, color)
@@ -426,6 +591,7 @@ class Visualizer:
         self.screen.blit(surf, (x, y))
 
     def _draw_pause_overlay(self):
+        """绘制暂停画面叠加层"""
         overlay = pygame.Surface((self.config.window_width, self.config.window_height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 40))
         self.screen.blit(overlay, (0, 0))
@@ -435,6 +601,7 @@ class Visualizer:
     # ---- 线路创建预览 ----
 
     def _draw_line_extension(self):
+        """绘制线路延伸预览"""
         if self.extending_line is None:
             return
         line = self.extending_line
@@ -458,6 +625,7 @@ class Visualizer:
             pygame.draw.line(self.screen, color, (lx, ly), (mx, my), 3)
 
     def _draw_game_over(self):
+        """绘制游戏结束画面"""
         overlay = pygame.Surface((self.config.window_width, self.config.window_height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 120))
         self.screen.blit(overlay, (0, 0))
@@ -486,6 +654,7 @@ class Visualizer:
             self.screen.blit(surf, (cx - surf.get_width() // 2, cy - 30 + i * 26))
 
     def _draw_line_creation(self):
+        """绘制线路创建预览"""
         if not self.creating_line or not self.line_create_stations:
             return
 
@@ -508,6 +677,11 @@ class Visualizer:
     # ---- 事件处理 ----
 
     def handle_events(self):
+        """处理pygame事件
+
+        返回:
+            bool: True表示继续运行, False表示退出
+        """
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
@@ -542,6 +716,16 @@ class Visualizer:
                 elif event.key == pygame.K_RETURN:
                     self._finish_line_creation()
                     self._finish_line_extension()
+                # 数字键 1-9 选择线路
+                elif event.key in range(pygame.K_1, pygame.K_9 + 1):
+                    line_idx = event.key - pygame.K_1
+                    if 0 <= line_idx < len(self.world.metroLine):
+                        self.selected_line = self.world.metroLine[line_idx]
+                        print(f"选中线路 {self.selected_line.number}")
+                elif event.key == pygame.K_0:
+                    # 按 0 取消选中
+                    self.selected_line = None
+                    print("取消线路选中")
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # 左键
@@ -578,6 +762,12 @@ class Visualizer:
         return True
 
     def _zoom_at(self, screen_pos, factor):
+        """在指定屏幕位置进行缩放
+
+        参数:
+            screen_pos: 屏幕坐标
+            factor: 缩放因子
+        """
         mx, my = screen_pos
         wx, wy = self.screen_to_world(mx, my)
         self.zoom *= factor
@@ -587,7 +777,14 @@ class Visualizer:
         self.offset_y = my + wy * self.zoom
 
     def _station_at_screen(self, pos):
-        """返回屏幕坐标最近的站点（在点击范围内）"""
+        """返回屏幕坐标最近的站点（在点击范围内）
+
+        参数:
+            pos: 屏幕坐标
+
+        返回:
+            station: 站点对象, 或 None
+        """
         mx, my = pos
         best = None
         best_dist = float('inf')
@@ -604,6 +801,7 @@ class Visualizer:
 
     def _start_line_extension(self):
         """进入线路延伸模式：如果有选中线路则延伸它，否则选第一条"""
+        """进入线路延伸模式：如果有选中线路则延伸它，否则选第一条"""
         if not self.world.metroLine:
             return
         if self.extending_line is not None:
@@ -618,7 +816,11 @@ class Visualizer:
         self.selected_stations = []
 
     def _click_station_for_extension(self, pos):
-        """延伸模式下点击站点，添加到线路末端"""
+        """延伸模式下点击站点，添加到线路末端
+
+        参数:
+            pos: 屏幕坐标
+        """
         if self.extending_line is None:
             return
         station = self._station_at_screen(pos)
@@ -630,12 +832,17 @@ class Visualizer:
 
     def _finish_line_extension(self):
         """结束线路延伸模式"""
+        """结束线路延伸模式"""
         self.extending_line = None
 
     # ---- 右键菜单 ----
 
     def _right_click(self, pos):
-        """右键快捷操作"""
+        """右键快捷操作
+
+        参数:
+            pos: 屏幕坐标
+        """
         station = self._station_at_screen(pos)
         if station is None:
             return
@@ -671,6 +878,7 @@ class Visualizer:
     # ---- 线路创建 ----
 
     def _start_line_creation(self):
+        """进入线路创建模式"""
         if len(self.world.metroLine) >= self.config.max_lines:
             return
         self.creating_line = True
@@ -678,6 +886,11 @@ class Visualizer:
         self.selected_stations = []
 
     def _click_station_for_line(self, pos):
+        """线路创建模式下点击站点
+
+        参数:
+            pos: 屏幕坐标
+        """
         station = self._station_at_screen(pos)
         if station is None:
             return
@@ -691,11 +904,15 @@ class Visualizer:
         self.selected_stations = list(self.line_create_stations)
 
     def _finish_line_creation(self):
+        """结束线路创建模式"""
         if not self.creating_line:
             return
         if len(self.line_create_stations) >= 2:
             new_line = self.world.playerNewLine(self.line_create_stations)
             if new_line:
+                # 自动选中新创建的线路
+                self.selected_line = new_line
+
                 # 自动分配一列车到新线路
                 if self.world.ti.trainAbleList:
                     first_s = self.line_create_stations[0]
@@ -711,12 +928,28 @@ class Visualizer:
     # ---- 列车/车厢操作 ----
 
     def _try_employ_train(self):
-        """将空闲列车分配到选中线路的第一个站点"""
+        """将空闲列车分配到选中的线路，如果没有选中线路则自动分配"""
         if not self.world.ti.trainAbleList:
+            print("没有空闲列车可用")
             return
+
+        # 如果有选中的线路，分配到该线路
+        if self.selected_line:
+            line = self.selected_line
+            if line.trainNm >= getattr(self.config, 'max_trains_per_line', 2):
+                print(f"线路 {line.number} 已达列车上限")
+                return
+            if line.stationList:
+                s = line.stationList[0]
+                self.world.playerEmployTrain(line, s, True)
+                print(f"已将列车分配到线路 {line.number}")
+            return
+
+        # 没有选中线路，自动分配到最需要的线路
         if not self.world.metroLine:
+            print("没有可用线路")
             return
-        # 分配到乘客最多的线路
+
         best_line = None
         best_need = -1
         for line in self.world.metroLine:
@@ -725,27 +958,50 @@ class Visualizer:
             if need > best_need:
                 best_need = need
                 best_line = line
+
         if best_line and best_line.stationList:
             s = best_line.stationList[0]
             self.world.playerEmployTrain(best_line, s, True)
+            print(f"已将列车自动分配到线路 {best_line.number}")
 
     def _try_connect_carriage(self):
-        """给最短车厢数的列车加一节车厢"""
+        """给选中的线路上的列车加车厢，如果没有选中线路则自动选择"""
         if not self.world.ti.carriageAbleList:
+            print("没有空闲车厢可用")
             return
-        best_train = None
-        min_car = float('inf')
-        for tr in self.world.ti.trainBusyList:
-            if len(tr.carriageList) < min_car:
-                min_car = len(tr.carriageList)
-                best_train = tr
-        if best_train:
+
+        # 如果有选中的线路，给该线路上的列车加车厢
+        if self.selected_line:
+            line = self.selected_line
+            # 找该线路上车厢最少的列车（并列时选序号最小的）
+            line_trains = [t for t in self.world.ti.trainBusyList if t.line == line]
+            if not line_trains:
+                print(f"线路 {line.number} 上没有列车")
+                return
+            # 按车厢数升序，序号升序排序
+            best_train = min(line_trains, key=lambda t: (len(t.carriageList), t.number))
             self.world.playerConnectCarriage(best_train)
+            print(f"已给线路 {line.number} 的列车 {best_train.number} 添加车厢")
+            return
+
+        # 没有选中线路，自动选择车厢最少的列车（并列时选序号最小的）
+        if not self.world.ti.trainBusyList:
+            print("没有运行中的列车")
+            return
+
+        best_train = min(self.world.ti.trainBusyList, key=lambda t: (len(t.carriageList), t.number))
+        line_id = best_train.line.number if best_train.line else "?"
+        print(f"已自动给线路 {line_id} 的列车 {best_train.number} 添加车厢")
+        self.world.playerConnectCarriage(best_train)
 
     # ---- 主循环 (独立运行模式) ----
 
     def run(self, max_ticks=500):
-        """可视化主循环"""
+        """可视化主循环
+
+        参数:
+            max_ticks: 最大tick数，默认为500
+        """
         self.world.setup()
         running = True
         _original_stdout = sys.stdout

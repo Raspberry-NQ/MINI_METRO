@@ -1,6 +1,9 @@
-# city_generator.py — 生成初始城市站点布局
+# city_generator.py — 城市生成模块
+#
+# 本文件负责生成初始城市站点布局，根据配置创建各类别的站点。
+
 import random
-from station import (
+from core.station import (
     station, CATEGORY_SHAPE_MAP,
     CATEGORY_RESIDENTIAL, CATEGORY_COMMERCIAL, CATEGORY_OFFICE,
     CATEGORY_HOSPITAL, CATEGORY_SCENIC, CATEGORY_SCHOOL,
@@ -10,11 +13,11 @@ from station import (
 def generate_city(config, id_start=0):
     """生成城市站点列表
 
-    Args:
+    参数:
         config: GameConfig 实例
-        id_start: 站点 ID 起始值
+        id_start: 站点 ID 起始值，默认为0
 
-    Returns:
+    返回:
         list[station]: 生成的站点列表
     """
     cfg = config
@@ -56,8 +59,15 @@ def generate_city(config, id_start=0):
 def _generate_cluster_centers(config):
     """生成各类别的聚集中心坐标
 
-    策略: 将城市空间大致分为区域，让居民区在一侧，办公区在中间，商业区分散等。
-    如果 config.city_cluster_centers 已设置，直接使用。
+    参数:
+        config: GameConfig 实例
+
+    返回:
+        dict: {category: (x, y)} 各类别的聚集中心坐标字典
+
+    说明:
+        策略: 将城市空间大致分为区域，让居民区在一侧，办公区在中间，商业区分散等。
+        如果 config.city_cluster_centers 已设置，直接使用。
     """
     cfg = config
 

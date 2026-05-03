@@ -1,20 +1,20 @@
-# ai_world.py — AI 训练专用世界
+# ai_world.py — AI训练专用世界模块
 #
-# 与 MetroWorld 的区别:
+# 本文件定义了AI训练专用的世界类，与MetroWorld的区别:
 #   1. 站点一次性全部生成，后续不再新增
-#   2. AI 在世界开始时一次性规划所有线路，规划完成后锁定线路不可修改
+#   2. AI在世界开始时一次性规划所有线路，规划完成后锁定线路不可修改
 #   3. 时间尺度贴近现实: 1 tick ≈ 1 分钟, 一天 1200 tick ≈ 20 小时
 #   4. 每天结束后自动结算（开支、客流、收益等指标）
-#   5. AI 只能做调度操作（调车/分配列车/加车厢），不能改线路
+#   5. AI只能做调度操作（调车/分配列车/加车厢），不能改线路
 
 import random
-from run import MetroWorld
-from game_config import GameConfig
-from station import CATEGORY_LABEL_CN
+from world.run import MetroWorld
+from world.game_config import GameConfig
+from core.station import CATEGORY_LABEL_CN
 
 
 class AIWorld(MetroWorld):
-    """AI 训练专用世界
+    """AI训练专用世界类
 
     生命周期:
         1. setup()        — 生成城市，给出初始资源
@@ -25,6 +25,11 @@ class AIWorld(MetroWorld):
     """
 
     def __init__(self, config=None):
+        """初始化AI世界
+
+        参数:
+            config: 游戏配置对象，默认为None时使用AI训练专用配置
+        """
         if config is None:
             config = GameConfig.for_ai_training()
         super().__init__(config)
@@ -38,15 +43,19 @@ class AIWorld(MetroWorld):
     # ============================================================
 
     def setup(self):
-        """生成城市和初始资源（不给列车，由 AI 自行分配）"""
+        """生成城市和初始资源
+
+        初始化乘客管理器、列车库存，一次性生成所有站点，按配置分配最大资源。
+        给齐所有列车和车厢资源，AI需要自行决定如何分配到线路上。
+        """
         self.pm = None  # 先创建 PassengerManager
-        from passengerManager import PassengerManager
-        from trainInventory import TrainInventory
+        from core.passengerManager import PassengerManager
+        from core.trainInventory import TrainInventory
         self.pm = PassengerManager(self, self.config)
-        self.ti = TrainInventory(self.pm, self.config)
+        self.ti = TrainInventory(self.pm, self.config, debug=False)  # AI训练时关闭调试输出
 
         # 一次性生成所有站点
-        from city_generator import generate_city
+        from world.city_generator import generate_city
         self.stations = generate_city(self.config, id_start=0)
         self._next_station_id = max((s.id for s in self.stations), default=0)
 
@@ -66,42 +75,81 @@ class AIWorld(MetroWorld):
 
     def lock_lines(self):
         """锁定线路，此后不可新建/延伸/插入线路"""
+        """锁定线路，此后不可新建/延伸/插入线路"""
         self._lines_locked = True
 
     def unlock_lines(self):
+        """解锁线路（仅用于重置或调试）"""
         """解锁线路（仅用于重置或调试）"""
         self._lines_locked = False
 
     # ---- 覆写线路操作方法，锁定后抛异常 ----
 
     def playerNewLine(self, station_list):
+        """创建新线路（锁定后会抛出异常）
+
+        参数:
+            station_list: 线路站点列表
+
+        返回:
+            MetroLine: 新线路对象, 或 None
+
+        异常:
+            RuntimeError: 线路已锁定
+        """
         if self._lines_locked:
             raise RuntimeError("线路已锁定，不可新建线路。仅可做调度操作。")
         return super().playerNewLine(station_list)
 
     def playerLineExtension(self, line, station_obj, append=True):
+        """延伸线路（锁定后会抛出异常）
+
+        参数:
+            line: 线路对象
+            station_obj: 站点对象
+            append: True=末端延伸, False=起点延伸
+
+        返回:
+            bool: 成功标志
+
+        异常:
+            RuntimeError: 线路已锁定
+        """
         if self._lines_locked:
             raise RuntimeError("线路已锁定，不可延伸线路。仅可做调度操作。")
         return super().playerLineExtension(line, station_obj, append)
 
     def playerLineInsert(self, line, index, station_obj):
+        """在线路中间插入站点（锁定后会抛出异常）
+
+        参数:
+            line: 线路对象
+            index: 插入位置
+            station_obj: 站点对象
+
+        返回:
+            bool: 成功标志
+
+        异常:
+            RuntimeError: 线路已锁定
+        """
         if self._lines_locked:
             raise RuntimeError("线路已锁定，不可插入站点。仅可做调度操作。")
         return super().playerLineInsert(line, index, station_obj)
 
     # ============================================================
-    # AI 便捷操作
+    # AI便捷操作
     # ============================================================
 
     def build_lines(self, line_definitions):
         """一次性创建多条线路
 
-        Args:
+        参数:
             line_definitions: list of list[station_id]
-                每个内层列表是一组站点 ID，按顺序组成一条线路
+                每个内层列表是一组站点ID，按顺序组成一条线路
                 例: [[1,3,5,7], [2,3,4,6]]
 
-        Returns:
+        返回:
             list[MetroLine]: 成功创建的线路对象列表
         """
         created = []
@@ -125,15 +173,15 @@ class AIWorld(MetroWorld):
     def place_initial_trains(self, train_placements):
         """在线路上放置初始列车
 
-        Args:
+        参数:
             train_placements: list of dict
                 每个字典包含:
-                  - line_id: int       线路 ID
-                  - station_id: int    上车站点 ID
+                  - line_id: int       线路ID
+                  - station_id: int    上车站点ID
                   - direction: bool    True=正向, False=反向
                 例: [{"line_id":1, "station_id":3, "direction":True}, ...]
 
-        Returns:
+        返回:
             list[train]: 成功放置的列车对象列表
         """
         placed = []
@@ -160,11 +208,11 @@ class AIWorld(MetroWorld):
     def run_one_day(self, ai_callback=None):
         """模拟一天（day_length tick），返回当日结算报告
 
-        Args:
+        参数:
             ai_callback: 可选调度回调，签名 ai_callback(world) -> None
                          每 60 tick (约 1 小时) 调用一次
 
-        Returns:
+        返回:
             dict: 当日结算报告
         """
         self._day_count += 1
@@ -198,11 +246,11 @@ class AIWorld(MetroWorld):
     def run_days(self, num_days=1, ai_callback=None):
         """模拟多天，返回所有结算报告
 
-        Args:
+        参数:
             num_days: 天数
             ai_callback: 调度回调
 
-        Returns:
+        返回:
             list[dict]: 每天的结算报告
         """
         reports = []
@@ -218,7 +266,15 @@ class AIWorld(MetroWorld):
     # ============================================================
 
     def _day_summary(self, start_arrived, start_ticks_survived):
-        """计算当日结算报告"""
+        """计算当日结算报告
+
+        参数:
+            start_arrived: 天开始时已到达乘客数
+            start_ticks_survived: 天开始时的tick数
+
+        返回:
+            dict: 当日结算报告字典
+        """
         cfg = self.config
 
         # --- 客流指标 ---
@@ -321,13 +377,21 @@ class AIWorld(MetroWorld):
         return report
 
     def _count_arrived(self):
-        """统计已到达目的地的乘客总数"""
+        """统计已到达目的地的乘客总数
+
+        返回:
+            int: 已到达乘客数
+        """
         if self.pm is None:
             return 0
         return sum(1 for p in self.pm.passenger_list if p.status == "arrived")
 
     def print_day_report(self, report):
-        """打印当日结算报告"""
+        """打印当日结算报告
+
+        参数:
+            report: 结算报告字典
+        """
         print(f"\n{'='*60}")
         print(f"第 {report['day']} 天结算")
         print(f"{'='*60}")
@@ -366,11 +430,15 @@ class AIWorld(MetroWorld):
         print(f"{'='*60}")
 
     # ============================================================
-    # AI 输入接口 (getGameState 已在父类实现，此处增加 AI 专用字段)
+    # AI输入接口 (getGameState 已在父类实现，此处增加 AI 专用字段)
     # ============================================================
 
     def getGameState(self):
-        """返回游戏状态快照，增加 AI 专用字段"""
+        """返回游戏状态快照，增加AI专用字段
+
+        返回:
+            dict: 游戏状态字典
+        """
         state = super().getGameState()
         state["lines_locked"] = self._lines_locked
         state["day_count"] = self._day_count
@@ -388,32 +456,32 @@ class AIWorld(MetroWorld):
         return state
 
     # ============================================================
-    # 禁用不适用于 AI 世界的功能
+    # 禁用不适用于AI世界的功能
     # ============================================================
 
     def _maybe_spawn_station(self):
-        """AI 世界不生成新站点"""
+        """AI世界不生成新站点"""
         pass
 
     def _resource_growth(self):
-        """AI 世界不渐进增长资源"""
+        """AI世界不渐进增长资源"""
         pass
 
     # ============================================================
-    # 快速启动（一个完整的 AI 测试流程）
+    # 快速启动（一个完整的AI测试流程）
     # ============================================================
 
     def quick_start(self, line_definitions, train_placements, num_days=1,
                     ai_callback=None):
-        """一键启动: 建线路 → 放列车 → 锁线 → 运行 N 天
+        """一键启动: 建线路 → 放列车 → 锁线 → 运行N天
 
-        Args:
+        参数:
             line_definitions: 传给 build_lines() 的线路定义
             train_placements: 传给 place_initial_trains() 的列车部署
             num_days: 模拟天数
             ai_callback: 每小时调用的调度回调
 
-        Returns:
+        返回:
             list[dict]: 每天结算报告
         """
         # 规划阶段

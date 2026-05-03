@@ -1,4 +1,7 @@
-# station.py
+# station.py — 站点模块
+#
+# 本文件定义了地铁站点的功能类别常量和站点类。
+# 站点类别包括：居民区、商业区、办公区、医院、景区、学校等。
 
 # 站点功能类别常量
 CATEGORY_RESIDENTIAL = "residential"   # 居民区
@@ -39,7 +42,18 @@ CATEGORY_LABEL_CN = {
 
 
 class station:
+    """站点类，表示地铁系统中的一个站点"""
+
     def __init__(self, id, type, x, y, category=None):
+        """初始化站点
+
+        参数:
+            id: 站点唯一标识符
+            type: 站点视觉形状 (circle, triangle, square, diamond, star, pentagon)
+            x: 站点x坐标
+            y: 站点y坐标
+            category: 站点功能类别，默认为None时根据type反推
+        """
         self.id = id
         self.type = type  # 视觉形状 (circle, triangle, square, diamond, star, pentagon)
         self.category = category or CATEGORY_SHAPE_MAPReverse.get(type)  # 功能类别
@@ -50,10 +64,16 @@ class station:
         self.connections = []  # 存储连接的Station对象
 
     def __str__(self):
+        """返回站点的字符串表示
+
+        返回:
+            str: 站点信息字符串
+        """
         cat = self.category or "?"
         return f"<STATION/ID:{self.id}/{cat}/{self.type} / x:{self.x} y:{self.y} /> "
 
     def printStation(self):
+        """打印站点详细信息"""
         cat = self.category or "?"
         print(f"Category:{cat} Type:{self.type} x:{self.x} y:{self.y}", end=" /")
 

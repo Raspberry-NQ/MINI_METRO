@@ -1,22 +1,33 @@
-# run.py — 运行迷你地铁世界
+# run.py - 运行迷你地铁世界
+#
+# 本文件是迷你地铁游戏的核心模块,负责构建和管理整个地铁世界.
+# 主要功能包括:世界初始化,玩家操作接口,游戏状态观察,每帧更新等.
+
 import sys
 import random
-from station import station, CATEGORY_SHAPE_MAP
-from line import MetroLine
-from trainInventory import TrainInventory
-from passengerManager import PassengerManager
-from passenger import Passenger
-from game_config import GameConfig
-from city_generator import generate_city
+from core.station import station, CATEGORY_SHAPE_MAP
+from core.line import MetroLine
+from core.trainInventory import TrainInventory
+from core.passengerManager import PassengerManager
+from core.passenger import Passenger
+from world.game_config import GameConfig
+from world.city_generator import generate_city
 
-OVERCROWD_LIMIT = 15  # 默认值，实际由 config 控制
+OVERCROWD_LIMIT = 15  # 默认值,实际由 config 控制
 
 
 # ============================================================
 # 构建世界
 # ============================================================
 class MetroWorld:
+    """地铁世界类,管理整个游戏世界的运行"""
+
     def __init__(self, config=None):
+        """初始化地铁世界
+
+        参数:
+            config: 游戏配置对象,默认为None时创建默认配置
+        """
         self.config = config or GameConfig()
         self.stations = []
         self.metroLine = []
@@ -33,7 +44,10 @@ class MetroWorld:
     # ============================================================
 
     def setup(self):
-        """生成城市站点，不预设线路 — AI/玩家需要自行布线"""
+        """生成城市站点,不预设线路 - AI/玩家需要自行布线
+
+        初始化乘客管理器,列车库存,生成城市站点,分配初始资源.
+        """
         self.pm = PassengerManager(self)
         self.ti = TrainInventory(self.pm, self.config)
 
@@ -50,9 +64,12 @@ class MetroWorld:
         self._rebuild_all_connections()
         self._print_init_summary()
 
-    # 保留旧的 setup 方法名兼容，但标记为旧版
+    # 保留旧的 setup 方法名兼容,但标记为旧版
     def setup_legacy(self):
-        """旧版: 两条预设线路, 共享换乘站"""
+        """旧版: 两条预设线路, 共享换乘站
+
+        使用预设的站点和线路配置初始化世界.
+        """
         self.pm = PassengerManager(self)
         self.ti = TrainInventory(self.pm, self.config)
 
@@ -96,21 +113,44 @@ class MetroWorld:
         self._print_init_summary()
 
     def _make_station(self, stype, x, y, category=None):
+        """创建站点对象
+
+        参数:
+            stype: 站点类型(视觉形状)
+            x: x坐标
+            y: y坐标
+            category: 站点功能类别,默认为None
+
+        返回:
+            station: 新创建的站点对象
+        """
         self._next_station_id += 1
         return station(self._next_station_id, stype, x, y, category=category)
 
     def _alloc_line_id(self):
+        """分配新的线路ID
+
+        返回:
+            int: 新分配的线路ID
+        """
         self._next_line_id += 1
         return self._next_line_id
 
     def _rebuild_all_connections(self):
-        """重建所有站点的 connections"""
+        """重建所有站点的连接关系
+
+        清除所有站点的连接列表,然后由所有线路重新构建连接关系.
+        """
         for s in self.stations:
             s.connections = []
         for line in self.metroLine:
             line._rebuild_connections()
 
     def _print_init_summary(self):
+        """打印世界初始化摘要信息
+
+        输出站点数,线路数,列车数等统计信息.
+        """
         print("=" * 60)
         print("世界初始化完成")
         print(f"站点数: {len(self.stations)}")
@@ -118,7 +158,7 @@ class MetroWorld:
         print(f"列车数: {len(self.ti.trainBusyList)}")
 
         # 按类别汇总站点
-        from station import CATEGORY_LABEL_CN
+        from core.station import CATEGORY_LABEL_CN
         cat_count = {}
         for s in self.stations:
             cat = s.category or "unknown"
@@ -136,15 +176,16 @@ class MetroWorld:
     # ============================================================
 
     def playerTrainShunt(self, train_obj, goalLine, direction, station_obj):
-        """调车：将列车从当前线路调到目标线路
+        """调车:将列车从当前线路调到目标线路
 
-        Args:
-            train_obj: 要调的列车
-            goalLine: 目标线路
+        参数:
+            train_obj: 要调的列车对象
+            goalLine: 目标线路对象
             direction: 在目标线路上的方向 (True=正向, False=反向)
-            station_obj: 调车到达的目标站点
-        Returns:
-            True 成功, False 失败
+            station_obj: 调车到达的目标站点对象
+
+        返回:
+            bool: True表示成功, False表示失败
         """
         if self.game_over:
             return False
@@ -157,14 +198,15 @@ class MetroWorld:
             return False
 
     def playerLineExtension(self, line, station_obj, append=True):
-        """延伸线路：在线路末端添加站点
+        """延伸线路:在线路末端添加站点
 
-        Args:
-            line: 要延伸的线路
-            station_obj: 要添加的站点
+        参数:
+            line: 要延伸的线路对象
+            station_obj: 要添加的站点对象
             append: True=末端延伸, False=起点延伸
-        Returns:
-            True 成功, False 失败
+
+        返回:
+            bool: True表示成功, False表示失败
         """
         if self.game_over:
             return False
@@ -185,12 +227,13 @@ class MetroWorld:
     def playerLineInsert(self, line, index, station_obj):
         """在线路中间插入站点
 
-        Args:
-            line: 要修改的线路
-            index: 插入位置（0-based）
-            station_obj: 要插入的站点
-        Returns:
-            True 成功, False 失败
+        参数:
+            line: 要修改的线路对象
+            index: 插入位置(0-based索引)
+            station_obj: 要插入的站点对象
+
+        返回:
+            bool: True表示成功, False表示失败
         """
         if self.game_over:
             return False
@@ -205,18 +248,21 @@ class MetroWorld:
     def playerNewLine(self, station_list):
         """创建新线路
 
-        Args:
-            station_list: 线路站点列表
-        Returns:
-            新线路对象, 或 None（线路数已达上限）
+        参数:
+            station_list: 线路站点列表,包含站点对象
+
+        返回:
+            MetroLine: 新线路对象, 或 None(线路数已达上限)
         """
         if self.game_over:
             return None
         if len(self.metroLine) >= self.config.max_lines:
-            print("线路数已达上限，无法创建新线路")
+            print("线路数已达上限,无法创建新线路")
             return None
 
-        new_line = MetroLine(self._alloc_line_id(), station_list)
+        # 从配置获取每条线路的最大列车数
+        max_trains_per_line = getattr(self.config, 'max_trains_per_line', 2)
+        new_line = MetroLine(self._alloc_line_id(), station_list, max_trains=max_trains_per_line)
         self.metroLine.append(new_line)
 
         for s in station_list:
@@ -230,8 +276,13 @@ class MetroWorld:
     def playerEmployTrain(self, line, station_obj, direction=True):
         """从车库分配列车到线路
 
-        Returns:
-            列车对象, 或 None（资源不足）
+        参数:
+            line: 目标线路对象
+            station_obj: 上车站点对象
+            direction: 列车方向,True=正向, False=反向,默认为True
+
+        返回:
+            train: 列车对象, 或 None(资源不足)
         """
         if self.game_over:
             return None
@@ -245,8 +296,11 @@ class MetroWorld:
     def playerConnectCarriage(self, train_obj):
         """给列车联挂一节车厢
 
-        Returns:
-            车厢对象, 或 None（资源不足）
+        参数:
+            train_obj: 目标列车对象
+
+        返回:
+            carriage: 车厢对象, 或 None(资源不足)
         """
         if self.game_over:
             return None
@@ -263,7 +317,11 @@ class MetroWorld:
     # ============================================================
 
     def getGameState(self):
-        """返回标准化的游戏状态快照"""
+        """返回标准化的游戏状态快照
+
+        返回:
+            dict: 包含tick,游戏结束标志,时间信息,站点信息,线路信息,列车信息,可用资源,全局指标等
+        """
         cfg = self.config
         period = cfg.get_current_period(self.tick)
         od_weights = cfg.get_od_weights(self.tick)
@@ -336,11 +394,25 @@ class MetroWorld:
         }
 
     def _get_lines_at_station(self, s):
-        """获取经过指定站点的所有线路 id"""
+        """获取经过指定站点的所有线路id
+
+        参数:
+            s: 站点对象
+
+        返回:
+            list: 线路ID列表
+        """
         return [l.number for l in self.metroLine if s in l.stationList]
 
     def _passenger_breakdown(self, s):
-        """获取站点等待乘客的目的地类别分布"""
+        """获取站点等待乘客的目的地类别分布
+
+        参数:
+            s: 站点对象
+
+        返回:
+            dict: 目的地类别到乘客数量的映射
+        """
         breakdown = {}
         for p in s.passenger_list:
             dest_cat = p.destination_station.category or "unknown"
@@ -350,14 +422,19 @@ class MetroWorld:
     # ---- AI 辅助查询方法 ----
 
     def getUnconnectedStations(self):
-        """返回所有未连接到任何线路的站点列表"""
+        """返回所有未连接到任何线路的站点列表
+
+        返回:
+            list: 未连接线路的站点对象列表
+        """
         return [s for s in self.stations if not self._get_lines_at_station(s)]
 
     def getCategoryCoverage(self):
         """返回各类别的线路覆盖率
 
-        Returns:
+        返回:
             dict: {category: {"connected": n, "total": n, "lines": set()}}
+                  其中connected为已连接站点数,total为总站点数,lines为覆盖该类别的线路ID列表
         """
         coverage = {}
         for cat in self.config.all_categories:
@@ -378,13 +455,14 @@ class MetroWorld:
     def findNearestStation(self, x, y, category=None, only_unconnected=False):
         """找离指定坐标最近的站点
 
-        Args:
-            x, y: 世界坐标
-            category: 只找该类别的站点, None 为不限
+        参数:
+            x: x坐标
+            y: y坐标
+            category: 只找该类别的站点, None为不限
             only_unconnected: 只找未连接线路的站点
 
-        Returns:
-            station 对象, 或 None
+        返回:
+            station: 站点对象, 或 None
         """
         best = None
         best_dist = float('inf')
@@ -400,28 +478,53 @@ class MetroWorld:
         return best
 
     def findStationById(self, station_id):
-        """按 ID 查找站点"""
+        """按ID查找站点
+
+        参数:
+            station_id: 站点ID
+
+        返回:
+            station: 站点对象, 或 None
+        """
         for s in self.stations:
             if s.id == station_id:
                 return s
         return None
 
     def findLineById(self, line_id):
-        """按 ID 查找线路"""
+        """按ID查找线路
+
+        参数:
+            line_id: 线路ID
+
+        返回:
+            MetroLine: 线路对象, 或 None
+        """
         for l in self.metroLine:
             if l.number == line_id:
                 return l
         return None
 
     def findTrainById(self, train_id):
-        """按 ID 查找列车"""
+        """按ID查找列车
+
+        参数:
+            train_id: 列车ID
+
+        返回:
+            train: 列车对象, 或 None
+        """
         for t in self.ti.trainBusyList:
             if t.number == train_id:
                 return t
         return None
 
     def _compute_metrics(self):
-        """计算全局评估指标"""
+        """计算全局评估指标
+
+        返回:
+            dict: 包含最大站点乘客数, 平均等待时间, 风险站点数, 未连接站点数, 已到达乘客数等指标的字典
+        """
         if not self.stations:
             return {}
 
@@ -441,7 +544,7 @@ class MetroWorld:
 
         avg_wait = sum(waiting_times) / len(waiting_times) if waiting_times else 0
 
-        # 拥堵风险：接近上限的站点数
+        # 拥堵风险:接近上限的站点数
         overcrowd_threshold = int(self.config.overcrowd_limit * 0.7)
         at_risk_stations = sum(
             1 for s in self.stations
@@ -470,7 +573,10 @@ class MetroWorld:
     # ============================================================
 
     def updateOneTick(self):
-        """单 tick 更新"""
+        """单tick更新
+
+        更新列车状态,乘客等待时间,生成乘客,动态站点生成,资源增长,检查拥堵等.
+        """
         if self.game_over:
             return
 
@@ -494,7 +600,7 @@ class MetroWorld:
         except Exception as e:
             print(f"[ERROR] tick {self.tick} 生成乘客时出错: {e}")
 
-        # 动态站点生成（淡化，极少出现）
+        # 动态站点生成(淡化,极少出现)
         try:
             self._maybe_spawn_station()
         except Exception as e:
@@ -522,16 +628,14 @@ class MetroWorld:
                 on_train = sum(1 for p in self.pm.passenger_list if p.status == "on_train")
                 waiting = sum(1 for p in self.pm.passenger_list if p.status in ("waiting", "transferring"))
                 print(f"\n统计: 到达={arrived}, 在车上={on_train}, 等候中={waiting}")
-                sys.exit(1)
-        except SystemExit:
-            raise
+                # 不再调用 sys.exit(1)，而是让游戏自然结束
         except Exception as e:
             print(f"[ERROR] tick {self.tick} 检查拥堵时出错: {e}")
 
     def _spawn_passengers_scheduled(self):
         """按日调度生成乘客
 
-        根据当前时段和 O-D 流量模式，按概率在各类别站点生成乘客。
+        根据当前时段和O-D流量模式, 按概率在各类别站点生成乘客.
         """
         cfg = self.config
         period = cfg.get_current_period(self.tick)
@@ -544,7 +648,7 @@ class MetroWorld:
         # 按 O-D 权重加权随机
         total_weight = sum(w for _, _, w in od_weights)
 
-        # 对每个活跃 O-D 对，尝试生成乘客
+        # 对每个活跃 O-D 对,尝试生成乘客
         for origin_cat, dest_cat, weight in od_weights:
             # 计算该 O-D 对的生成概率
             prob = base_rate * weight / total_weight
@@ -565,10 +669,24 @@ class MetroWorld:
                 continue
             dest = random.choice(destinations)
 
+            # 检查是否可达（避免生成无法到达的乘客）
+            try:
+                route = self.pm.route_planner.find_route(origin, dest)
+                if route is None:
+                    # 不可达，跳过
+                    continue
+            except Exception:
+                # 寻路出错，跳过
+                continue
+
+            # 可达，生成乘客
             self.pm.generate_passenger(origin, dest)
 
     def _spawn_passengers(self):
-        """旧版: 按配置生成乘客（已弃用，保留兼容）"""
+        """旧版: 按配置生成乘客(已弃用,保留兼容)
+
+        使用基础生成率加增长率的方式生成乘客.
+        """
         cfg = self.config
         spawn_chance = min(
             cfg.passenger_spawn_max_chance,
@@ -581,7 +699,10 @@ class MetroWorld:
                 self.generate_random_passenger()
 
     def _maybe_spawn_station(self):
-        """按配置动态生成新站点（已淡化）"""
+        """按配置动态生成新站点(已淡化)
+
+        在满足条件时生成新站点,增加游戏难度.
+        """
         cfg = self.config
         if len(self.stations) >= cfg.station_max_count:
             return
@@ -597,7 +718,11 @@ class MetroWorld:
             print(f"  新站点出现: {new_station}")
 
     def _generate_random_station(self):
-        """尝试生成一个随机站点，确保与已有站点保持最小距离"""
+        """尝试生成一个随机站点,确保与已有站点保持最小距离
+
+        返回:
+            station: 新站点对象, 或 None(找不到合适位置)
+        """
         cfg = self.config
         for _ in range(20):  # 最多尝试 20 次
             x = random.randint(*cfg.station_x_range)
@@ -614,7 +739,10 @@ class MetroWorld:
         return None  # 20 次都找不到合适位置
 
     def _resource_growth(self):
-        """按配置增长资源"""
+        """按配置增长资源
+
+        根据资源增长计划表,定期发放列车,车厢,线路额度等资源.
+        """
         cfg = self.config
         for interval, resource_type, amount in cfg.resource_growth_schedule:
             if interval <= 0 or self.tick % interval != 0:
@@ -623,7 +751,11 @@ class MetroWorld:
                 self._grant_resource(resource_type)
 
     def _grant_resource(self, resource_type):
-        """发放一项资源"""
+        """发放一项资源
+
+        参数:
+            resource_type: 资源类型,可选值为"train","carriage","line","tunnel"
+        """
         if resource_type == "train":
             if len(self.ti.trainAbleList) + len(self.ti.trainBusyList) < self.config.max_trains:
                 self.ti.addTrain()
@@ -633,12 +765,12 @@ class MetroWorld:
                 self.ti.addCarriage()
                 print(f"  获得新车厢! 车库现有 {len(self.ti.carriageAbleList)} 节待命")
         elif resource_type == "line":
-            # 新线路额度 — 增加最大线路数上限
+            # 新线路额度 - 增加最大线路数上限
             if self.config.max_lines < 20:
                 self.config.max_lines += 1
                 print(f"  获得新线路额度! 最大线路数: {self.config.max_lines}")
         elif resource_type == "tunnel":
-            # 隧道暂不实现，预留
+            # 隧道暂不实现,预留
             pass
 
     # ============================================================
@@ -646,6 +778,10 @@ class MetroWorld:
     # ============================================================
 
     def generate_random_passenger(self):
+        """生成随机乘客
+
+        在随机站点生成一位乘客,目的地也是随机站点.
+        """
         if len(self.stations) < 2:
             return
         origin = random.choice(self.stations)
@@ -656,6 +792,11 @@ class MetroWorld:
         self.pm.generate_passenger(origin, dest)
 
     def check_overcrowd(self):
+        """检查站点是否拥堵超标
+
+        返回:
+            station: 拥堵超标的站点对象, 或 None
+        """
         limit = self.config.overcrowd_limit
         for s in self.stations:
             if s.passengerNm >= limit:
@@ -663,6 +804,10 @@ class MetroWorld:
         return None
 
     def print_status(self):
+        """打印当前游戏状态
+
+        输出站点候车信息,列车状态,可用资源等.
+        """
         cfg = self.config
         period = cfg.get_current_period(self.tick)
         print(f"\n--- Tick {self.tick} (时段: {period}) ---")
@@ -686,16 +831,16 @@ class MetroWorld:
     def run(self, max_ticks=500, ai_callback=None):
         """主循环
 
-        Args:
-            max_ticks: 最大 tick 数
-            ai_callback: 可选的 AI 回调函数, 每隔若干 tick 调用
+        参数:
+            max_ticks: 最大tick数,默认为500
+            ai_callback: 可选的AI回调函数, 每隔若干tick调用一次
                          签名: ai_callback(world) -> None
         """
         self.setup()
         while self.tick < max_ticks and not self.game_over:
             self.updateOneTick()
 
-            # AI 决策：每 10 tick 调用一次
+            # AI 决策:每 10 tick 调用一次
             if ai_callback and self.tick % 10 == 0:
                 try:
                     ai_callback(self)
@@ -720,7 +865,7 @@ if __name__ == "__main__":
 
     world = MetroWorld()
     if args.visual:
-        from visualizer import Visualizer
+        from game.visualizer import Visualizer
         viz = Visualizer(world)
         viz.run(max_ticks=args.max_ticks)
     else:

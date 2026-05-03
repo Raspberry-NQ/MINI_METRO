@@ -1,12 +1,26 @@
-# line.py
+# line.py — 地铁线路模块
+#
+# 本文件定义了地铁线路类，负责管理线路上的站点序列、
+# 列车运行方向、站点连接关系等。
 
-from external_functions import countTrainRunningTime
+from core.external_functions import countTrainRunningTime
+from core.train import TrainError
 
 
 class MetroLine:
-    def __init__(self, number, stList):
+    """地铁线路类，管理一条地铁线路的所有信息"""
+
+    def __init__(self, number, stList, max_trains=999):
+        """初始化线路
+
+        参数:
+            number: 线路编号
+            stList: 站点列表，包含站点对象
+            max_trains: 该线路最多可容纳的列车数，默认为999（实际无限制）
+        """
         self.number = number
         self.stationList = list(stList)
+        self.max_trains = max_trains
 
         self.trainNm = 0
         self.trainDirection = {}  # True为正向,False为反向
@@ -17,7 +31,11 @@ class MetroLine:
     # ---- 线路修改 ----
 
     def addStation(self, station):
-        """在线路末端延伸一个站点"""
+        """在线路末端延伸一个站点
+
+        参数:
+            station: 要添加的站点对象
+        """
         self.stationList.append(station)
         # 更新连接关系：新站与前一站互为邻居
         if len(self.stationList) >= 2:
@@ -26,7 +44,12 @@ class MetroLine:
         self._invalidate_route_cache()
 
     def insertStation(self, index, station):
-        """在指定位置插入一个站点"""
+        """在指定位置插入一个站点
+
+        参数:
+            index: 插入位置（0-based索引）
+            station: 要插入的站点对象
+        """
         index = max(0, min(index, len(self.stationList)))
         self.stationList.insert(index, station)
 
@@ -35,7 +58,14 @@ class MetroLine:
         self._invalidate_route_cache()
 
     def removeStation(self, station):
-        """移除一个站点，线路上正在运营的列车如果有此站点需要注意"""
+        """移除一个站点，线路上正在运营的列车如果有此站点需要注意
+
+        参数:
+            station: 要移除的站点对象
+
+        返回:
+            bool: True表示移除成功, False表示站点不在线路上
+        """
         if station not in self.stationList:
             return False
 
@@ -47,14 +77,24 @@ class MetroLine:
     # ---- 连接关系维护 ----
 
     def _add_connection(self, stA, stB):
-        """双向添加站点连接"""
+        """双向添加站点连接
+
+        参数:
+            stA: 站点A
+            stB: 站点B
+        """
         if stB not in stA.connections:
             stA.connections.append(stB)
         if stA not in stB.connections:
             stB.connections.append(stA)
 
     def _remove_connection(self, stA, stB):
-        """双向移除站点连接（仅当两站不再被同一线路相邻连接时才移除）"""
+        """双向移除站点连接（仅当两站不再被同一线路相邻连接时才移除）
+
+        参数:
+            stA: 站点A
+            stB: 站点B
+        """
         # 检查是否还有其他线路让这两站相邻
         # 这里简单处理：直接移除，由 _rebuild_connections 重建
         if stB in stA.connections:
@@ -63,11 +103,11 @@ class MetroLine:
             stB.connections.remove(stA)
 
     def _rebuild_connections(self):
-        """根据当前 stationList 重建相邻站点的连接关系"""
-        # 先清掉由本线路维护的连接
-        # 由于无法区分哪些连接是本线路添加的，采用全部重建策略
-        # 清除所有站点的 connections，再由所有线路重建
-        # 注意：此方法只负责本线路的连接，全局重建由 World 调用
+        """根据当前 stationList 重建相邻站点的连接关系
+
+        清除所有站点的 connections，再由所有线路重建。
+        注意：此方法只负责本线路的连接，全局重建由 World 调用。
+        """
         for i in range(len(self.stationList)):
             st = self.stationList[i]
             # 不在此处清空，只添加
@@ -80,27 +120,59 @@ class MetroLine:
 
     # ---- 列车管理 ----
 
-    def distance(self):  # 单位为刻
+    def distance(self):
+        """计算线路总长度（单位为tick）
+
+        返回:
+            int: 线路总长度
+        """
         dis = 0
         for i in range(0, len(self.stationList) - 1):
             dis = dis + countTrainRunningTime(self.stationList[i], self.stationList[i + 1])
         return dis
 
     def addNewTrainToLine(self, train, station, direction):
-        """添加新车到线路"""
+        """添加新车到线路
+
+        参数:
+            train: 列车对象
+            station: 上车站点对象
+            direction: 运行方向，True=正向, False=反向
+
+        异常:
+            TrainError: 线路列车数已达上限
+        """
+        # 检查列车数量限制
+        max_trains = getattr(self, 'max_trains', 2)
+        if self.trainNm >= max_trains:
+            raise TrainError(f"线路 {self.number} 列车数已达上限 {max_trains}")
+
         train.line = self
         self.trainDirection[train] = direction
         self.trainNm += 1
 
     def removeTrainFromLine(self, train):
-        """从线路移除列车（调车时使用），会清空 train.line"""
+        """从线路移除列车（调车时使用），会清空 train.line
+
+        参数:
+            train: 要移除的列车对象
+        """
         if train in self.trainDirection:
             self.trainNm -= 1
             self.trainDirection.pop(train)
         train.line = None
 
     def shuntTrainToLine(self, train, direction, station):
-        """调车到本线路，设置 train.line"""
+        """调车到本线路，设置 train.line
+
+        参数:
+            train: 列车对象
+            direction: 运行方向，True=正向, False=反向
+            station: 到达站点对象
+
+        返回:
+            int: 上客时间
+        """
         self.trainNm += 1
         self.trainDirection[train] = direction
         train.line = self
@@ -108,29 +180,59 @@ class MetroLine:
         return lt
 
     def nextStation(self, train):
-        """返回列车在当前方向上的下一站，到达终点站时自动掉头"""
+        """返回列车在当前方向上的下一站，不自动掉头
+
+        参数:
+            train: 列车对象
+
+        返回:
+            station: 下一站站点对象, 或 None
+
+        说明:
+            此方法只返回下一站，不改变方向。
+            方向改变由 turnAround() 方法处理，在列车到达终点站后调用。
+        """
         if not self.stationList or train not in self.trainDirection:
             return None
 
         dire = self.trainDirection[train]
-        if dire == True:
-            p = self.stationList.index(train.stationNow)
-            if p == len(self.stationList) - 1:
-                self.trainDirection[train] = False
-                if p - 1 < 0:
-                    return None
-                return self.stationList[p - 1]
-            else:
-                return self.stationList[p + 1]
-        else:
-            p = self.stationList.index(train.stationNow)
-            if p == 0:
-                self.trainDirection[train] = True
-                if p + 1 >= len(self.stationList):
-                    return None
+        p = self.stationList.index(train.stationNow)
+
+        if dire == True:  # 正向
+            if p + 1 < len(self.stationList):
                 return self.stationList[p + 1]
             else:
+                return None  # 已到终点，无下一站
+        else:  # 反向
+            if p - 1 >= 0:
                 return self.stationList[p - 1]
+            else:
+                return None  # 已到起点，无下一站
+
+    def turnAround(self, train):
+        """列车掉头（在终点站改变方向）
+
+        参数:
+            train: 列车对象
+
+        返回:
+            bool: True表示掉头成功, False表示不在终点站或无法掉头
+        """
+        if train not in self.trainDirection:
+            return False
+
+        p = self.stationList.index(train.stationNow)
+        dire = self.trainDirection[train]
+
+        # 只在终点站才掉头
+        if dire == True and p == len(self.stationList) - 1:  # 正向到达终点
+            self.trainDirection[train] = False
+            return True
+        elif dire == False and p == 0:  # 反向到达起点
+            self.trainDirection[train] = True
+            return True
+
+        return False
 
     def isNextStationBlocked(self, train):
         """检查列车的下一站是否被同方向的其他列车占用
@@ -141,9 +243,11 @@ class MetroLine:
         - "被占用"指另一列车在该站且处于 boarding/alighting/waiting 状态（已停站）
         - running 状态的列车 stationNow 还是出发站，不算占用出发站
 
-        Returns:
-            True = 被占用, 不能出发
-            False = 可以出发
+        参数:
+            train: 列车对象
+
+        返回:
+            bool: True = 被占用, 不能出发; False = 可以出发
         """
         if train not in self.trainDirection:
             return False
@@ -191,6 +295,14 @@ class MetroLine:
         return False
 
     def isAtDestination(self, train):
+        """判断列车是否到达终点站
+
+        参数:
+            train: 列车对象
+
+        返回:
+            bool: True表示到达终点站
+        """
         dire = self.trainDirection[train]
         if dire == True:
             p = self.stationList.index(train.stationNow)
@@ -200,6 +312,7 @@ class MetroLine:
             return p == 0
 
     def printLine(self):
+        """打印线路信息"""
         print("正向起点", end="")
         for i, station in enumerate(self.stationList):
             if i > 0:
