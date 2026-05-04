@@ -23,6 +23,7 @@ import torch
 
 from world.ai_world import AIWorld
 from world.game_config import GameConfig
+from world.map_data import MapData
 from core.station import (
     CATEGORY_RESIDENTIAL, CATEGORY_COMMERCIAL, CATEGORY_OFFICE,
     CATEGORY_SCHOOL, CATEGORY_HOSPITAL, CATEGORY_SCENIC,
@@ -171,12 +172,14 @@ class _SuppressPrint:
         return False
 
 
-def train_scheduler(num_episodes=5000, config=None):
+def train_scheduler(num_episodes=5000, config=None, map_paths=None):
     """训练列车调度器
 
     参数:
         num_episodes: 训练的 episode 数量，默认为 5000
         config: 游戏配置对象，如果为 None 则使用默认 AI 训练配置
+        map_paths: 地图文件路径列表，如果为 None 则随机生成地图
+                   如果提供多个地图，每个episode随机选择一个
 
     每个 episode = 一天 (1200 tick), 每 60 tick 决策一次, 共 20 步
     """
@@ -195,6 +198,26 @@ def train_scheduler(num_episodes=5000, config=None):
     executor = ActionExecutor(max_lines=cfg.max_lines)
     reward_calc = RewardCalculator(overcrowd_limit=cfg.overcrowd_limit)
 
+    # 加载地图（如果提供）
+    maps = []
+    if map_paths:
+        for path in map_paths:
+            map_data = MapData()
+            map_data.load(path)
+            is_valid, errors = map_data.validate()
+            if not is_valid:
+                print(f"[ERROR] 地图 {path} 验证失败:")
+                for err in errors:
+                    print(f"  - {err}")
+                continue
+            maps.append(map_data)
+            print(f"✓ 加载地图: {path}")
+
+        if not maps:
+            print("[WARN] 没有有效的地图，将使用随机生成")
+    else:
+        print("[INFO] 未提供地图，将使用随机生成")
+
     # checkpoint 目录
     ckpt_dir = os.path.join(PROJECT_ROOT, "ai", "checkpoints")
     os.makedirs(ckpt_dir, exist_ok=True)
@@ -209,7 +232,7 @@ def train_scheduler(num_episodes=5000, config=None):
     episode_arrived = []
     best_avg_reward = -float('inf')
 
-    print(f"{'='*60}")
+    print(f"\n{'='*60}")
     print(f"列车调度器训练开始")
     print(f"  episodes: {num_episodes}")
     print(f"  device: {agent.device}")
@@ -220,6 +243,11 @@ def train_scheduler(num_episodes=5000, config=None):
     print(f"  max_trains: {cfg.max_trains}")
     print(f"  max_ticks: {cfg.max_ticks_per_episode} tick (上限)")
     print(f"  decision_interval: {cfg.decision_interval} tick")
+    if maps:
+        print(f"  地图数量: {len(maps)}")
+        print(f"  地图模式: 从地图文件加载")
+    else:
+        print(f"  地图模式: 随机生成")
     print(f"{'='*60}\n")
 
     start_time = time.time()
@@ -230,12 +258,18 @@ def train_scheduler(num_episodes=5000, config=None):
 
         with _SuppressPrint():
             world = AIWorld(cfg)
-            world.setup()
-            rule_based_build_lines(world)
-            # 不再放置初始列车，让AI从零开始学习调度
-            # initial_placements = rule_based_place_trains(world)
-            # world.place_initial_trains(initial_placements)
-            world.lock_lines()
+
+            # 根据是否提供地图选择初始化方式
+            if maps:
+                # 从地图列表中随机选择一个
+                import random
+                selected_map = random.choice(maps)
+                world.setup_from_map(selected_map)
+            else:
+                # 使用原有的随机生成方式
+                world.setup()
+                rule_based_build_lines(world)
+                world.lock_lines()
 
         print("✓", flush=True)
 
@@ -373,7 +407,7 @@ def train_scheduler(num_episodes=5000, config=None):
 # 评估
 # ============================================================
 
-def evaluate_scheduler(agent_path=None, num_episodes=10, max_decisions=50, config=None):
+def evaluate_scheduler(agent_path=None, num_episodes=10, max_decisions=50, config=None, map_path=None):
     """测试训练好的调度器
 
     参数:
@@ -381,6 +415,7 @@ def evaluate_scheduler(agent_path=None, num_episodes=10, max_decisions=50, confi
         num_episodes: 评估的 episode 数量
         max_decisions: 每个episode的最大决策次数（默认50次）
         config: 游戏配置对象，如果为 None 则使用默认 AI 训练配置
+        map_path: 地图文件路径，如果为 None 则随机生成地图
 
     说明:
         每个 episode 运行最多 max_decisions 次决策，然后统计结果。
@@ -399,9 +434,28 @@ def evaluate_scheduler(agent_path=None, num_episodes=10, max_decisions=50, confi
         agent.load(agent_path)
     agent.epsilon = 0.0  # 关闭探索，完全使用训练好的策略
 
+    # 加载地图（如果提供）
+    map_data = None
+    if map_path:
+        map_data = MapData()
+        map_data.load(map_path)
+        is_valid, errors = map_data.validate()
+        if not is_valid:
+            print(f"[ERROR] 地图 {map_path} 验证失败:")
+            for err in errors:
+                print(f"  - {err}")
+            return []
+        print(f"✓ 加载地图: {map_path}")
+    else:
+        print("[INFO] 未提供地图，将使用随机生成")
+
     print(f"\n{'='*60}")
     print(f"评估调度器 ({num_episodes} episodes)")
     print(f"运行模式: 每个episode最多{max_decisions}次决策")
+    if map_data:
+        print(f"地图: {map_path}")
+    else:
+        print(f"地图: 随机生成")
     print(f"{'='*60}")
 
     episode_results = []
@@ -410,10 +464,15 @@ def evaluate_scheduler(agent_path=None, num_episodes=10, max_decisions=50, confi
         # 初始化世界
         with _SuppressPrint():
             world = AIWorld(cfg)
-            world.setup()
-            rule_based_build_lines(world)
-            # 不放置初始列车，让AI从零开始
-            world.lock_lines()
+
+            if map_data:
+                # 使用指定地图
+                world.setup_from_map(map_data)
+            else:
+                # 随机生成
+                world.setup()
+                rule_based_build_lines(world)
+                world.lock_lines()
 
         # 持续运行直到游戏结束或达到决策上限
         tick_count = 0
@@ -515,9 +574,22 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, default=None, help="模型路径 (评估时用)")
     parser.add_argument("--episodes", type=int, default=5000, help="训练/评估 episode 数")
     parser.add_argument("--max-decisions", type=int, default=50, help="评估时每个episode的最大决策次数 (默认50)")
+    parser.add_argument("--maps", type=str, nargs='+', default=None,
+                        help="地图文件路径列表 (训练时可指定多个地图，评估时指定单个地图)")
     args = parser.parse_args()
 
     if args.eval:
-        evaluate_scheduler(agent_path=args.model, num_episodes=args.episodes, max_decisions=args.max_decisions)
+        # 评估模式：如果提供了多个地图，只使用第一个
+        map_path = args.maps[0] if args.maps else None
+        evaluate_scheduler(
+            agent_path=args.model,
+            num_episodes=args.episodes,
+            max_decisions=args.max_decisions,
+            map_path=map_path
+        )
     else:
-        train_scheduler(num_episodes=args.episodes)
+        # 训练模式：可以使用多个地图
+        train_scheduler(
+            num_episodes=args.episodes,
+            map_paths=args.maps
+        )

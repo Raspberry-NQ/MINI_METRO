@@ -61,14 +61,23 @@ class Passenger:
             return
 
         current_route_step = self.planned_route[self.current_route_index]
-        # 起始站（index=0）的 line=None，需要看下一步才能知道要坐哪条线
+
+        # 如果当前步骤是换乘步（transfer=True），目标是换乘后的线路
+        if current_route_step.get('transfer', False):
+            self.target_line = current_route_step['line']
+            self.target_direction = current_route_step['direction']
+            return
+
+        # 如果当前步骤是起始站（line=None），查看下一步
         if current_route_step['line'] is None and self.current_route_index + 1 < len(self.planned_route):
             next_step = self.planned_route[self.current_route_index + 1]
             self.target_line = next_step['line']
             self.target_direction = next_step['direction']
-        else:
-            self.target_line = current_route_step['line']
-            self.target_direction = current_route_step['direction']
+            return
+
+        # 普通情况：目标就是当前步骤的线路和方向
+        self.target_line = current_route_step['line']
+        self.target_direction = current_route_step['direction']
 
     def should_board_train(self, train):
         """判断是否应该上这班车
@@ -122,15 +131,22 @@ class Passenger:
         if self.should_board_train(train):
             self.status = "on_train"
             self.current_station = None
-            # 推进 route_index 到实际乘坐的线路步骤（跳过起点站）
-            while (self.current_route_index < len(self.planned_route) - 1 and
-                   self.planned_route[self.current_route_index]['line'] is None):
-                self.current_route_index += 1
+
+            # 推进 route_index 到实际乘坐的线路步骤
+            # 跳过起始站（line=None）和换乘步（transfer=True）
+            while self.current_route_index < len(self.planned_route) - 1:
+                current_step = self.planned_route[self.current_route_index]
+                # 如果当前步是起始站或换乘步，推进
+                if current_step['line'] is None or current_step.get('transfer', False):
+                    self.current_route_index += 1
+                else:
+                    break
+
             return True
         return False
 
     def alight_train(self, station):
-        """下车 — process_passenger_alighting 已将 current_route_index 推进到正确位置
+        """下车
 
         参数:
             station: 下车站点对象
@@ -139,17 +155,26 @@ class Passenger:
 
         if station is self.destination_station:
             self.status = "arrived"
-        elif (self.planned_route and
-              self.current_route_index + 1 < len(self.planned_route) and
-              self.planned_route[self.current_route_index + 1]['line'] is not self.planned_route[self.current_route_index]['line']):
-            # 下一步使用不同线路 → 换乘
-            self.current_route_index += 1
-            self.status = "transferring"
-            self.transfer_waiting = True
-            self._update_current_target()
-        else:
-            self.status = "waiting"
-            self.transfer_waiting = False
+        elif self.planned_route and self.current_route_index < len(self.planned_route):
+            current_step = self.planned_route[self.current_route_index]
+
+            # 如果当前步是换乘步（transfer=True），推进到下一步
+            if current_step.get('transfer', False):
+                self.current_route_index += 1
+
+            # 检查下一步是否使用不同线路（需要换乘）
+            if (self.current_route_index + 1 < len(self.planned_route) and
+                self.planned_route[self.current_route_index + 1]['line'] is not self.planned_route[self.current_route_index]['line']):
+                # 下一步使用不同线路 → 换乘
+                # 推进到换乘步（下一步）
+                self.current_route_index += 1
+                self.status = "transferring"
+                self.transfer_waiting = True
+                self._update_current_target()
+            else:
+                # 继续乘坐当前线路
+                self.status = "waiting"
+                self.transfer_waiting = False
 
     def update_waiting_time(self):
         """更新等待时间

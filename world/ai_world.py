@@ -69,6 +69,85 @@ class AIWorld(MetroWorld):
         self._rebuild_all_connections()
         self._print_init_summary()
 
+    def setup_from_map(self, map_data):
+        """从MapData加载地图
+
+        参数:
+            map_data: MapData实例，包含站点、线路、资源信息
+
+        说明:
+            根据map_data创建站点、线路，并分配资源。
+            线路已经建好并锁定，AI只需学习调度。
+        """
+        from core.passengerManager import PassengerManager
+        from core.trainInventory import TrainInventory
+        from core.station import station, CATEGORY_SHAPE_MAP
+
+        # 初始化乘客管理器和列车库存
+        self.pm = PassengerManager(self, self.config)
+        self.ti = TrainInventory(self.pm, self.config, debug=False)
+
+        # 创建站点
+        self.stations = []
+        for s_info in map_data.stations:
+            s_id = s_info["id"]
+            x = s_info["x"]
+            y = s_info["y"]
+            category = s_info["category"]
+            shape = CATEGORY_SHAPE_MAP[category]
+            s = station(s_id, shape, x, y, category=category)
+            # 设置乘客生成权重
+            s.spawn_weight = s_info.get("spawn_weight", 1.0)
+            self.stations.append(s)
+
+        self._next_station_id = max((s.id for s in self.stations), default=0)
+
+        # 添加资源（根据map_data中的资源数）
+        num_trains = map_data.resources.get("trains", 0)
+        num_carriages = map_data.resources.get("carriages", 0)
+        for _ in range(num_trains):
+            self.ti.addTrain()
+        for _ in range(num_carriages):
+            self.ti.addCarriage()
+
+        # 创建线路
+        for line_info in map_data.lines:
+            line_id = line_info["id"]
+            station_ids = line_info["station_ids"]
+            segment_ticks = line_info.get("segment_ticks", [])
+
+            # 获取站点对象
+            station_objs = []
+            for sid in station_ids:
+                s = self.findStationById(sid)
+                if s is None:
+                    print(f"[WARN] 站点 {sid} 不存在，跳过线路 {line_id}")
+                    continue
+                station_objs.append(s)
+
+            if len(station_objs) < 2:
+                print(f"[WARN] 线路 {line_id} 站点不足，跳过")
+                continue
+
+            # 创建线路
+            line = self.playerNewLine(station_objs)
+            if line is None:
+                print(f"[WARN] 线路 {line_id} 创建失败")
+                continue
+
+            # 设置站间行驶时间（如果有）
+            if segment_ticks and len(segment_ticks) == len(station_objs) - 1:
+                # 更新线路的segment_ticks
+                # 注意: 需要在MetroLine中支持这个功能
+                # 暂时跳过，使用默认计算
+                pass
+
+        # 锁定线路
+        self.lock_lines()
+
+        self._rebuild_all_connections()
+        self._print_init_summary()
+
     # ============================================================
     # 线路锁定机制
     # ============================================================

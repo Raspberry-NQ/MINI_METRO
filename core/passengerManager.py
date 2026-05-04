@@ -95,24 +95,56 @@ class PassengerManager:
 
         for carriage in train.carriageList:
             for passenger in carriage.passenger_list[:]:
-                # 推进 route_index 到当前站对应的步骤（跳过途中经过的站）
-                # 但不停在换乘步（line 变化的步），换乘步由下面的检测逻辑处理
-                while (passenger.current_route_index < len(passenger.planned_route) - 1 and
-                       passenger.planned_route[passenger.current_route_index + 1]['station'] is train.stationNow and
-                       passenger.planned_route[passenger.current_route_index + 1]['line'] is not None and
-                       passenger.planned_route[passenger.current_route_index + 1]['line'] is passenger.planned_route[passenger.current_route_index]['line']):
-                    passenger.current_route_index += 1
+                current_station = train.stationNow
+
+                # 检查路径是否有station字段（兼容旧格式）
+                has_station_field = (
+                    passenger.planned_route and
+                    passenger.current_route_index < len(passenger.planned_route) and
+                    'station' in passenger.planned_route[passenger.current_route_index]
+                )
+
+                if has_station_field:
+                    # 推进 route_index，跳过已经过的站
+                    while (passenger.current_route_index < len(passenger.planned_route) and
+                           'station' in passenger.planned_route[passenger.current_route_index] and
+                           passenger.planned_route[passenger.current_route_index]['station'] is not current_station):
+                        # 如果当前步骤的站点不是当前站，且当前步骤不是换乘步，推进
+                        current_step = passenger.planned_route[passenger.current_route_index]
+                        if not current_step.get('transfer', False):
+                            passenger.current_route_index += 1
+                        else:
+                            # 换乘步不应该被跳过
+                            break
+
+                    # 检查索引是否有效
+                    if passenger.current_route_index >= len(passenger.planned_route):
+                        continue
+
+                    current_step = passenger.planned_route[passenger.current_route_index]
+
+                    # 当前站是否匹配？
+                    if 'station' in current_step and current_step['station'] is not current_station:
+                        continue  # 乘客还未到站
+
+                # 检查索引是否有效
+                if passenger.current_route_index >= len(passenger.planned_route):
+                    current_step = None
+                else:
+                    current_step = passenger.planned_route[passenger.current_route_index]
 
                 # 到达目的地
-                if train.stationNow is passenger.destination_station:
-                    passenger.alight_train(train.stationNow)
+                if current_station is passenger.destination_station:
+                    passenger.alight_train(current_station)
                     passengers_to_alight.append(passenger)
                     carriage.passenger_list.remove(passenger)
                     carriage.currentNum = len(carriage.passenger_list)
-                # 需要换乘：当前站的下一步使用不同线路
-                elif (passenger.current_route_index + 1 < len(passenger.planned_route) and
-                      passenger.planned_route[passenger.current_route_index + 1]['line'] is not passenger.planned_route[passenger.current_route_index]['line']):
-                    passenger.alight_train(train.stationNow)
+                # 需要换乘：当前步骤标记为换乘，或下一步使用不同线路
+                elif current_step and (
+                    current_step.get('transfer', False) or
+                    (passenger.current_route_index + 1 < len(passenger.planned_route) and
+                     passenger.planned_route[passenger.current_route_index + 1]['line'] is not current_step['line'])):
+                    passenger.alight_train(current_station)
                     passengers_to_alight.append(passenger)
                     carriage.passenger_list.remove(passenger)
                     carriage.currentNum = len(carriage.passenger_list)
@@ -120,8 +152,8 @@ class PassengerManager:
         # 将下车的乘客添加到站点
         for passenger in passengers_to_alight:
             if passenger.status != "arrived":
-                train.stationNow.passenger_list.append(passenger)
-                train.stationNow.passengerNm = len(train.stationNow.passenger_list)
+                current_station.passenger_list.append(passenger)
+                current_station.passengerNm = len(current_station.passenger_list)
 
         return passengers_to_alight
 
@@ -139,21 +171,39 @@ class PassengerManager:
 
         for carriage in train.carriageList:
             for passenger in carriage.passenger_list[:]:
-                passenger.alight_train(station)
-                if passenger.status != "arrived":
-                    # 乘客未到达目的地，设为等待并更新目标线路
-                    passenger.status = "waiting"
-                    passenger.transfer_waiting = False
-                    passenger._update_current_target()
+                # 强制下车时，乘客需要重新规划路径
+                destination = passenger.destination_station
+
+                # 清空当前路径
+                passenger.planned_route = None
+                passenger.current_route_index = 0
+                passenger.status = "waiting"
+                passenger.transfer_waiting = False
+                passenger.current_station = station
+
+                # 尝试重新规划路径
+                if self.route_planner:
+                    try:
+                        passenger.plan_route(self.route_planner)
+                    except Exception:
+                        # 如果规划失败，乘客就留在当前站等待
+                        passenger.target_line = None
+                        passenger.target_direction = None
+
+                # 如果无法规划路径，乘客仍等待在当前站
+                if not passenger.planned_route:
+                    passenger.target_line = None
+                    passenger.target_direction = None
+
                 passengers_to_alight.append(passenger)
+
             carriage.passenger_list.clear()
             carriage.currentNum = 0
 
         # 将下车的乘客添加到站点
         for passenger in passengers_to_alight:
-            if passenger.status != "arrived":
-                station.passenger_list.append(passenger)
-                station.passengerNm = len(station.passenger_list)
+            station.passenger_list.append(passenger)
+            station.passengerNm = len(station.passenger_list)
 
         return passengers_to_alight
 

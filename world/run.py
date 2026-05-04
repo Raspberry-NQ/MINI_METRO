@@ -300,10 +300,16 @@ class MetroWorld:
             train_obj: 目标列车对象
 
         返回:
-            carriage: 车厢对象, 或 None(资源不足)
+            carriage: 车厢对象, 或 None(资源不足或已达上限)
         """
         if self.game_over:
             return None
+
+        # 检查列车是否已达最大车厢数
+        max_carriages = getattr(self.config, 'max_carriages_per_train', 4)
+        if len(train_obj.carriageList) >= max_carriages:
+            return None  # 已达上限
+
         try:
             c = self.ti.getFreeCarriage()
             train_obj.connectCarriage(c)

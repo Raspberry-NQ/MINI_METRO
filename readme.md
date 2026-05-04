@@ -23,7 +23,8 @@ MINI_METRO/
 │   ├── run.py                # 地铁世界运行
 │   ├── ai_world.py           # AI训练世界
 │   ├── game_config.py        # 游戏配置
-│   └── city_generator.py     # 城市生成器
+│   ├── city_generator.py     # 城市生成器
+│   └── map_data.py           # 地图数据结构
 │
 ├── ai/                        # AI设计文件
 │   ├── src/                   # AI源码
@@ -36,6 +37,9 @@ MINI_METRO/
 │   │   ├── scheduler_encoder.py
 │   │   └── train_scheduler.py
 │   └── checkpoints/           # AI模型检查点
+│
+├── maps/                      # 地图文件夹
+│   └── simple_two_line.json  # 示例地图
 │
 ├── game/                      # 可运行的游戏文件
 │   ├── main.py               # 游戏入口
@@ -64,7 +68,7 @@ AI训练世界使用以下资源配置：
 - **游戏结束条件**: 当任何站点等待乘客超过50人时游戏结束
 - **初始资源**: 世界初始化时一次性给齐所有列车和车厢，AI需自行决定如何分配
 
-20260418 AI暂时还只支持给定最终地图的调度
+20260418 AI支持从零开始学习调度，初始不放置任何列车，由AI自主决策
 
 世界设定
 * 乘客随机生成，但在早晚会有从居民区往返写字楼区和商业区的高峰期，模拟现实的早晚高峰
@@ -92,9 +96,10 @@ AI训练世界使用以下资源配置：
 
 - `world.py` - 游戏世界类，管理站点、线路和整体游戏状态
 - `run.py` - 完整的游戏运行器，使用城市生成器创建初始站点，包含玩家操作接口和观察接口
-- `ai_world.py` - AI训练专用世界，一次性生成所有资源，支持日调度运行
+- `ai_world.py` - AI训练专用世界，一次性生成所有资源，支持日调度运行，支持从MapData加载地图
 - `game_config.py` - 游戏配置类，集中管理所有可调参数（站点类别、日调度乘客生成、资源增长、时间计算、可视化等）
 - `city_generator.py` - 城市生成器，按类别聚集生成初始城市站点布局
+- `map_data.py` - 地图数据结构，封装站点、线路、资源信息，支持序列化/反序列化
 
 ### AI模块 (ai/)
 
@@ -123,40 +128,30 @@ AI训练世界使用以下资源配置：
 
 ### 运行游戏
 
-1. 运行简单演示世界：
+1. 运行可视化游戏（推荐）：
    ```bash
-   python game/main.py
-   ```
-
-2. 运行完整游戏（文本模式）（unfinished）：
-   ```bash
-   python -m world.run
-   ```
-
-3. 运行可视化游戏（推荐）：
-   ```bash
-   python -m world.run --visual
+   python game/main.py --visual
    ```
    依赖：`pip install pygame`
 
-### 运行AI训练
+2. 运行AI训练：
+   ```bash
+   # 训练AI调度器
+   python ai/src/train_scheduler.py --episodes 5000
 
-```bash
-# 训练AI调度器
-python -m ai.src.train_scheduler --episodes 5000
+   # 评估训练好的模型
+   python ai/src/train_scheduler.py --eval --model ai/checkpoints/best_scheduler.pt
 
-# 评估训练好的模型
-python -m ai.src.train_scheduler --eval --model ai/checkpoints/best_scheduler.pt
-```
+   # 可视化AI决策过程
+   python visualize_ai_decision.py --model ai/checkpoints/best_scheduler.pt
+   ```
 
-### 运行测试
-
-```bash
-# 运行所有测试
-python tests/test_all.py
-python tests/test_shunt.py
-python tests/test_passenger_alight.py
-```
+3. 运行测试：
+   ```bash
+   python tests/test_all.py
+   python tests/test_shunt.py
+   python tests/test_passenger_alight.py
+   ```
 
 ## 游戏更新机制
 
@@ -225,9 +220,7 @@ python tests/test_passenger_alight.py
 
 ## 可视化操作
 
-*20260422 需要修正延伸逻辑*
-
-运行 `python -m world.run --visual` 进入图形化界面，支持以下操作：
+运行 `python game/main.py --visual` 进入图形化界面，支持以下操作：
 
 | 按键/鼠标 | 功能 |
 |---|---|
@@ -235,10 +228,12 @@ python tests/test_passenger_alight.py
 | `+` / `-` | 加速/减速模拟 |
 | 滚轮 | 缩放视图 |
 | 左键拖拽 | 平移视图 |
-| `L` | 创建新线路（点击站点选择，Enter 确认） |
-| `E` | 延伸线路（点击站点添加到线路末端，Enter 确认） |
-| `T` | 添加列车到最需车的线路 |
-| `C` | 给列车联挂车厢 |
+| `L` | 创建新线路（点击站点选择，Enter 确认，Esc 取消） |
+| `E` | 延伸线路（点击站点添加到线路末端，Enter 确认，Esc 取消） |
+| `1-9` | 选择线路（数字键选择对应线路） |
+| `0` | 取消线路选中 |
+| `T` | 添加列车到选中的线路（无选中则自动分配到最需车的线路） |
+| `C` | 给选中的线路上的列车联挂车厢（无选中则自动选择车厢最少的列车） |
 | 右键点击站点 | 自动将站点连接到最近线路 |
 | `R` | 重置视图位置和缩放 |
 | `Esc` | 退出（编辑模式时取消编辑） |
@@ -353,11 +348,122 @@ SHUNTING    -<  (ALIGHTING)
 - `visualizer.py`：站点类别底色、类别图例、时段显示、未连接站点警告
 - ~~动态站点生成已淡化（间隔 200，概率 0.3）~~
 
+## 地图系统
+
+地图系统允许创建、保存和加载自定义地图，用于AI训练和评估。
+
+### 地图数据结构
+
+`MapData` 类包含：
+- **站点信息**: ID、坐标、类别、乘客生成权重
+- **线路信息**: ID、站点序列、站间行驶tick
+- **资源信息**: 列车和车厢数量
+
+### 创建地图
+
+**方法1: Python脚本**
+
+```python
+from world.map_data import MapData
+from core.station import CATEGORY_RESIDENTIAL, CATEGORY_COMMERCIAL, CATEGORY_OFFICE
+
+# 创建地图
+map_data = MapData()
+
+# 添加站点
+map_data.add_station(1, 100, 200, CATEGORY_RESIDENTIAL, spawn_weight=1.0)
+map_data.add_station(2, 200, 200, CATEGORY_COMMERCIAL, spawn_weight=1.5)
+map_data.add_station(3, 300, 200, CATEGORY_OFFICE, spawn_weight=1.0)
+
+# 添加线路
+map_data.add_line(1, [1, 2, 3], segment_ticks=[5, 5])
+
+# 设置资源
+map_data.set_resources(trains=4, carriages=8)
+
+# 验证并保存
+is_valid, errors = map_data.validate()
+if is_valid:
+    map_data.save("my_map.json")
+```
+
+**方法2: JSON文件**
+
+```json
+{
+  "stations": [
+    {"id": 1, "x": 100, "y": 200, "category": "residential", "spawn_weight": 1.0},
+    {"id": 2, "x": 200, "y": 200, "category": "commercial", "spawn_weight": 1.5}
+  ],
+  "lines": [
+    {"id": 1, "station_ids": [1, 2], "segment_ticks": [5]}
+  ],
+  "resources": {"trains": 4, "carriages": 8}
+}
+```
+
+### 使用地图训练
+
+```bash
+# 使用单个地图
+python -m ai.src.train_scheduler --episodes 100 --maps maps/simple_two_line.json
+
+# 使用多个地图（每个episode随机选择）
+python -m ai.src.train_scheduler --episodes 100 --maps map1.json map2.json map3.json
+
+# 不指定地图（随机生成）
+python -m ai.src.train_scheduler --episodes 100
+```
+
+### 使用地图评估
+
+```bash
+# 在指定地图上评估
+python -m ai.src.train_scheduler --eval \
+    --model ai/checkpoints/best_scheduler.pt \
+    --maps maps/simple_two_line.json \
+    --episodes 10
+```
+
+### 示例地图
+
+项目包含示例地图 `maps/simple_two_line.json`：
+- **线路1**: 居民区1 → 商业区 → 办公区1
+- **线路2**: 居民区2 → 商业区 → 学校
+- **换乘站**: 商业区（两条线交汇）
+- **资源**: 4辆列车，8个车厢
+
+### 地图验证
+
+自动验证：
+- 站点ID唯一
+- 线路ID唯一
+- 线路引用的站点存在
+- 线路至少有2个站点
+- segment_ticks长度正确
+- 资源数量合法
+
+### 最佳实践
+
+**地图设计**:
+- 平衡性：确保各类别站点都有覆盖
+- 连通性：所有站点通过线路可达
+- 换乘设计：设置换乘站让线路交汇
+- 资源匹配：列车和车厢数量与线路规模匹配
+
+**训练策略**:
+- 单一地图：快速测试和调试
+- 多地图：提高AI泛化能力
+- 混合模式：部分固定地图，部分随机生成
+
+**评估策略**:
+- 训练地图：检查是否学会特定地图
+- 新地图：测试泛化能力
+- 多地图：全面评估性能
+
 ---
 
-# AI 架构设计
-
-## 整体思路
+## AI 架构设计
 
 AI 的核心挑战是：在游戏开始时就需要根据站点类别布局规划线路，后续根据日调度周期动态调车。AI 需要两层决策——**线路规划层**（低频，大改）和**调度层**（高频，微调）。
 

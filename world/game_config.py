@@ -241,6 +241,7 @@ class GameConfig:
         # ---- 列车/车厢 ----
         cfg.carriage_capacity = 30
         cfg.default_carriages_per_train = 2
+        cfg.max_carriages_per_train = 4  # 每辆列车最多4节车厢
         cfg.max_lines = 4  # 最多4条线路
         cfg.max_trains = 8  # 最多8辆列车
         cfg.max_carriages = 8  # 最多8个车厢

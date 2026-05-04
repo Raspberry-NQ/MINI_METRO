@@ -85,17 +85,28 @@ class RoutePlanner:
                 })
 
         # 添加换乘连接（同一站点的不同线路）
+        # 换乘边：从当前站（当前线路）到同一站（新线路），只计算换乘惩罚
         for station in self.metro_system.stations:
             lines_at_station = self._get_lines_at_station(station)
             for i, line1 in enumerate(lines_at_station):
                 for line2 in lines_at_station[i + 1:]:
-                    # 双向换乘连接
+                    # 换乘边：line1 -> line2（在同一站）
+                    graph[station].append({
+                        'station': station,  # 仍在同一站
+                        'line': line2,       # 切换到line2
+                        'direction': None,   # 方向待定（乘客需要选择）
+                        'time': self.transfer_penalty,  # 只有换乘惩罚
+                        'transfer': True,
+                        'from_line': line1    # 记录从哪条线换乘
+                    })
+                    # 换乘边：line2 -> line1（在同一站）
                     graph[station].append({
                         'station': station,
-                        'line': line2,
-                        'direction': None,  # 换乘时方向待定
+                        'line': line1,
+                        'direction': None,
                         'time': self.transfer_penalty,
-                        'transfer': True
+                        'transfer': True,
+                        'from_line': line2
                     })
 
         return graph
@@ -211,19 +222,46 @@ class RoutePlanner:
         current = end
         while current != start:
             prev_station, edge = previous[current]
-            path.insert(0, {
-                'station': current,
-                'line': edge['line'],
-                'direction': edge['direction'],
-                'transfer': edge['transfer']
-            })
+
+            # 如果是换乘边，需要插入换乘步
+            if edge['transfer']:
+                # 换乘步：在同一站，从 from_line 切换到 edge['line']
+                path.insert(0, {
+                    'station': current,
+                    'line': edge['line'],
+                    'direction': None,  # 方向待乘客选择
+                    'transfer': True
+                })
+                # 当前站（换乘前）的步骤
+                path.insert(0, {
+                    'station': current,
+                    'line': edge['from_line'],
+                    'direction': None,  # 方向信息在换乘前不重要
+                    'transfer': False
+                })
+            else:
+                # 普通步骤
+                path.insert(0, {
+                    'station': current,
+                    'line': edge['line'],
+                    'direction': edge['direction'],
+                    'transfer': False
+                })
+
             current = prev_station
 
+        # 添加起点站
         path.insert(0, {
             'station': start,
             'line': None,
             'direction': None,
             'transfer': False
         })
+
+        # 后处理：为换乘步填充方向信息
+        # 换乘后的方向应该与后续步骤的方向一致
+        for i in range(len(path) - 1):
+            if path[i]['transfer'] and path[i + 1]['line'] is path[i]['line']:
+                path[i]['direction'] = path[i + 1]['direction']
 
         return path

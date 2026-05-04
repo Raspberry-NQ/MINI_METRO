@@ -1,0 +1,69 @@
+{
+  "stations": [
+    {
+      "id": 1,
+      "x": 100,
+      "y": 200,
+      "category": "residential",
+      "spawn_weight": 1.0
+    },
+    {
+      "id": 2,
+      "x": 200,
+      "y": 200,
+      "category": "commercial",
+      "spawn_weight": 1.5
+    },
+    {
+      "id": 3,
+      "x": 300,
+      "y": 200,
+      "category": "office",
+      "spawn_weight": 1.0
+    },
+    {
+      "id": 4,
+      "x": 200,
+      "y": 100,
+      "category": "residential",
+      "spawn_weight": 1.0
+    },
+    {
+      "id": 5,
+      "x": 200,
+      "y": 300,
+      "category": "school",
+      "spawn_weight": 0.8
+    }
+  ],
+  "lines": [
+    {
+      "id": 1,
+      "station_ids": [
+        1,
+        2,
+        3
+      ],
+      "segment_ticks": [
+        5,
+        5
+      ]
+    },
+    {
+      "id": 2,
+      "station_ids": [
+        4,
+        2,
+        5
+      ],
+      "segment_ticks": [
+        5,
+        5
+      ]
+    }
+  ],
+  "resources": {
+    "trains": 4,
+    "carriages": 8
+  }
+}

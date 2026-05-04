@@ -36,35 +36,56 @@ class ActionSpace:
 
         条件:
           - 分配列车: 有空闲列车 + 目标线存在 + 目标线未满
-          - 加车厢: 有空闲车厢 + 目标线上有列车
+          - 加车厢: 有空闲车厢 + 目标线上有列车 + 列车未达最大车厢数
         """
         mask = [True]  # 不操作始终合法
 
         available_trains = state_dict["available"]["trains"]
         available_carriages = state_dict["available"]["carriages"]
 
-        # 收集线路信息
-        line_train_count = {}
-        line_max_trains = {}
-        line_has_train = {}
-        for line_info in state_dict["lines"]:
-            lid = line_info["id"]
-            line_train_count[lid] = line_info["train_count"]
-            line_max_trains[lid] = line_info.get("max_trains", 2)
-            line_has_train[lid] = line_info["train_count"] > 0
+        # 收集线路信息（按索引顺序）
+        lines_sorted = sorted(state_dict["lines"], key=lambda l: l["id"])
+        line_train_count = []
+        line_max_trains = []
+        line_has_train = []
+        line_can_add_carriage = []
+
+        # 默认最大车厢数
+        max_carriages_per_train = 4  # 与 game_config 保持一致
+
+        for line_info in lines_sorted:
+            line_id = line_info["id"]
+            line_train_count.append(line_info["train_count"])
+            line_max_trains.append(line_info.get("max_trains", 999))
+            line_has_train.append(line_info["train_count"] > 0)
+
+            # 检查线路上是否有列车还能加车厢
+            can_add = False
+            if available_carriages > 0:
+                for train_info in state_dict.get("trains", []):
+                    if train_info["line_id"] == line_id:
+                        carriage_count = train_info.get("carriage_count", 1)
+                        if carriage_count < max_carriages_per_train:
+                            can_add = True
+                            break
+            line_can_add_carriage.append(can_add)
 
         # 分配列车到线路
-        for lid in range(self.max_lines):
-            can_employ = (available_trains > 0 and
-                         lid in line_train_count and
-                         line_train_count[lid] < line_max_trains.get(lid, 2))
+        for line_idx in range(self.max_lines):
+            if line_idx < len(lines_sorted):
+                can_employ = (available_trains > 0 and
+                             line_train_count[line_idx] < line_max_trains[line_idx])
+            else:
+                can_employ = False
             mask.append(can_employ)
 
         # 给线路上的列车加车厢
-        for lid in range(self.max_lines):
-            can_add = (available_carriages > 0 and
-                      lid in line_has_train and
-                      line_has_train[lid])
+        for line_idx in range(self.max_lines):
+            if line_idx < len(lines_sorted):
+                can_add = (available_carriages > 0 and
+                          line_can_add_carriage[line_idx])
+            else:
+                can_add = False
             mask.append(can_add)
 
         # 补齐到 n_actions (理论上不需要, 但防御性编程)

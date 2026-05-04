@@ -253,7 +253,7 @@ def t():
     assert p.should_board_train(tr2) == True
     pm.process_passenger_boarding(tr2)
     assert p.status == "on_train"
-    assert p.current_route_index == 3  # 指向换乘步 (line=l2)
+    assert p.current_route_index == 4  # 上车后跳过换乘步，指向实际乘坐的步骤（sF）
 test("换乘乘客坐新线路继续旅程", t)
 
 def t():

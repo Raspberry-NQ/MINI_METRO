@@ -432,8 +432,16 @@ class AIDecisionVisualizer(Visualizer):
             valid_mask = self.action_space.get_valid_mask(state_dict)
             action = self.agent.select_action(state_tensor.unsqueeze(0), valid_mask)
 
+            # 记录执行前的状态（用于检测首次分配）
+            trains_before = state_dict.get("available", {}).get("trains", 0)
+
             # 执行动作
             self.executor.execute(action, self.world, state_dict)
+
+            # 检测是否是分配列车的动作
+            state_after = self.world.getGameState()
+            trains_after = state_after.get("available", {}).get("trains", 0)
+            is_train_allocation = trains_after < trains_before
 
             # 记录
             self.last_action = action
@@ -449,6 +457,8 @@ class AIDecisionVisualizer(Visualizer):
         # 打印决策信息（恢复stdout后）
         print(f"\n[决策 {self.decision_count}] tick={self.world.tick}")
         print(f"  动作: {self.last_action_name}")
+        if is_train_allocation:
+            print(f"  ⭐ 分配列车! 可用列车: {trains_before} → {trains_after}")
         print(f"  奖励: {reward:+.2f} (累计: {self.total_reward:.2f})")
 
         # 打印状态变化
@@ -456,6 +466,15 @@ class AIDecisionVisualizer(Visualizer):
         print(f"  等待乘客: {metrics.get('total_waiting', 0)}")
         print(f"  风险站点: {metrics.get('at_risk_stations', 0)}")
         print(f"  到达乘客: {metrics.get('total_arrived', 0)}")
+
+        # 打印线路列车分布
+        if is_train_allocation or self.decision_count <= 5:
+            print("  当前线路列车分布:")
+            for line_info in state_after.get("lines", []):
+                line_id = line_info["id"]
+                train_count = line_info["train_count"]
+                station_count = len(line_info.get("station_ids", []))
+                print(f"    线路{line_id}: {train_count}辆列车, {station_count}个站点")
 
 
 def main():
@@ -501,12 +520,38 @@ def main():
         world = AIWorld(cfg)
         world.setup()
         rule_based_build_lines(world)
-        world.place_initial_trains(rule_based_place_trains(world))
+        # 不放置初始列车，让AI从零开始学习调度（与训练一致）
+        # world.place_initial_trains(rule_based_place_trains(world))
         world.lock_lines()
     finally:
         sys.stdout = _original_stdout
 
     print("世界初始化完成")
+    print("注意: 初始状态没有列车在线路上，AI将从零开始调度")
+
+    # 打印初始状态
+    initial_state = world.getGameState()
+    print("\n" + "="*60)
+    print("初始状态:")
+    print("="*60)
+    print(f"站点数: {len(world.stations)}")
+    print(f"线路数: {len(world.metroLine)}")
+
+    # 打印线路信息
+    print("\n线路规划:")
+    for line_info in initial_state.get("lines", []):
+        line_id = line_info["id"]
+        station_count = len(line_info.get("station_ids", []))
+        train_count = line_info["train_count"]
+        print(f"  线路{line_id}: {station_count}个站点, {train_count}辆列车")
+
+    # 打印可用资源
+    avail = initial_state.get("available", {})
+    print(f"\n可用资源:")
+    print(f"  列车: {avail.get('trains', 0)}辆")
+    print(f"  车厢: {avail.get('carriages', 0)}个")
+    print(f"  剩余线路额度: {avail.get('lines_remaining', 0)}条")
+    print("="*60 + "\n")
 
     # 创建可视化器并运行
     viz = AIDecisionVisualizer(
