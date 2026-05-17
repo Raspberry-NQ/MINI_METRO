@@ -2,6 +2,10 @@
 
 地铁线路与资源规划模拟系统
 
+<img src="./docs/pic/sys_pic.png" style="zoom:25%;" />
+
+![train_pic](./docs/pic/train_pic.png)
+
 ## 项目结构
 
 ```
@@ -138,10 +142,10 @@ AI训练世界使用以下资源配置：
    ```bash
    # 训练AI调度器
    python ai/src/train_scheduler.py --episodes 5000
-
+   
    # 评估训练好的模型
    python ai/src/train_scheduler.py --eval --model ai/checkpoints/best_scheduler.pt
-
+   
    # 可视化AI决策过程
    python visualize_ai_decision.py --model ai/checkpoints/best_scheduler.pt
    ```
